@@ -1,8 +1,7 @@
-from msilib.schema import Directory
 from mp_api import *
+from mp_api.client import MPRester
 
 from pymatgen.io.cif import CifWriter
-from pymatgen.analysis.defects.generators import VacancyGenerator
 
 import csv
 import random
