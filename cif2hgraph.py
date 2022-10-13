@@ -1,8 +1,13 @@
+import numpy as np
+import os
+import csv
+import json
+
 from pymatgen.io.cif import CifWriter, CifParser
 from pymatgen.core.structure import Structure
 from torch_geometric.data import Data
 import torch
-import numpy as np
+
 
 ## CIF -> tuple(tensor([[node_index,connected_node_index],...]), tensor([dist,...])) ##
 
@@ -133,6 +138,7 @@ def cif2hgraph(cif, radius:float = 3):
     chgraph = Data(x=x, hyperedge_index=hedge_indx, pos=pos)
     return chgraph
 
+#Returns list of hypergraph data objects (pyg data with hedge_index) from given directory
 
 def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius:float=3.0):
     if root == '':
@@ -142,7 +148,7 @@ def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius
     with open(f'{directory}\\id_prop.csv') as id_prop:
         id_prop = csv.reader(id_prop)
         id_prop_data = [row for row in id_prop]
-    graph_data_list = []
+    hgraph_data_list = []
     if atom_vecs:
         with open(f'{directory}\\atom_init.json') as atom_init:
             atom_vecs = json.load(atom_init)
@@ -154,7 +160,7 @@ def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius
                     nodes_z = graph.x.tolist()
                     nodes_atom_vec = [atom_vecs[f'{z}'] for z in nodes_z]
                     graph.x = torch.tensor(nodes_atom_vec).float()
-                    graph_data_list.append(graph)
+                    hgraph_data_list.append(graph)
                     print(f'Added {filename} to hgraph set')
                 except:
                     print(f'Error with {filename}, confirm existence')

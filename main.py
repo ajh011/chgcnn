@@ -24,7 +24,7 @@ from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
 from sklearn import metrics
 from chgcnn import CHGCNN
-from data import DefectCalcDataset
+from cif2hgraph import cif2hgraph, hgraph_list_from_dir
 
 class AverageMeter:
     """Computes and stores the average and current value"""
@@ -243,7 +243,8 @@ def main():
     torch.manual_seed(args.seed)
     torch.backends.cudnn.benchmark = True
 
-    dataset = DefectCalcDataset(task=args.task)
+    dataset = hgraph_list_from_dir(directory="crystal_data")
+    #dataset = DefectCalcDataset(task=args.task)
     data0 = dataset[0]
 
     n_data = len(dataset)
