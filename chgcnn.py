@@ -7,7 +7,7 @@ from torch_scatter import scatter
 
 
 class CHGCNN(nn.Module):
-    def __init__(self, atom_fea_dim, edge_dim, node_dim=64, num_layers=3, h_dim=128,
+    def __init__(self, atom_fea_dim, edge_dim, node_dim=64, num_layers=1, h_dim=128,
                  task='regression', num_class=2, pool='mean'):
         super().__init__()
 

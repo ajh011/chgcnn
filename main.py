@@ -232,9 +232,9 @@ def main():
     parser.add_argument('--drop-last', default=False, type=bool)
     parser.add_argument('--pin-memory', default=True, type=bool)
     parser.add_argument('--logwandb', default=False, action='store_true')
-    parser.add_argument('--project', type=str, default='defect-project')
-    parser.add_argument('--entity', type=str, default='wayne833')
-    parser.add_argument('--task', type=str, default='classification')
+    parser.add_argument('--project', type=str, default='')
+    parser.add_argument('--entity', type=str, default='')
+    parser.add_argument('--task', type=str, default='regression')
 
     args = parser.parse_args()
 
@@ -243,8 +243,9 @@ def main():
     torch.manual_seed(args.seed)
     torch.backends.cudnn.benchmark = True
 
-    dataset = hgraph_list_from_dir(directory="crystal_data")
+    dataset = hgraph_list_from_dir(directory="crystal_data", radius = 7.5)
     #dataset = DefectCalcDataset(task=args.task)
+
     data0 = dataset[0]
 
     n_data = len(dataset)
@@ -274,7 +275,7 @@ def main():
         pin_memory=args.pin_memory,
     )
 
-    model = CGCNN(data0.x.size(-1), data0.edge_attr.size(-1), task=args.task)
+    model = CHGCNN(data0.x.size(-1), data0.x.size(-1), task=args.task)
     model.to(device)
 
     if args.optim == 'SGD':

@@ -65,18 +65,18 @@ def cif2graph(cif_file, radius:float=3):
 def graph_list_from_cif_dir(directory='cif_data', root='', atom_vecs = True, radius:float = 3):
     if root == '':
         root = os. getcwd()
-    directory = root+'\\'+directory
+    directory = root+'/'+directory
     print(f'Searching {directory} for CIF data to convert to graphs')
-    with open(f'{directory}\\id_prop.csv') as id_prop:
+    with open(f'{directory}/id_prop.csv') as id_prop:
         id_prop = csv.reader(id_prop)
         id_prop_data = [row for row in id_prop]
     graph_data_list = []
     if atom_vecs:
-        with open(f'{directory}\\atom_init.json') as atom_init:
+        with open(f'{directory}/atom_init.json') as atom_init:
             atom_vecs = json.load(atom_init)
             for filename, fileprop in id_prop_data:
                 try:
-                    file = directory+'\\'+filename+'.cif'
+                    file = directory+'/'+filename+'.cif'
                     graph = cif2graph(file, radius=radius)
                     graph.y = torch.tensor(float(fileprop))
                     nodes_z = graph.x.tolist()
@@ -89,7 +89,7 @@ def graph_list_from_cif_dir(directory='cif_data', root='', atom_vecs = True, rad
     else:
         for filename, fileprop in id_prop_data:
                 try:
-                    file = directory+'\\'+filename+'.cif'
+                    file = directory+'/'+filename+'.cif'
                     graph = cif2graph(file, radius=radius)
                     graph.y = torch.tensor(float(fileprop))
                     graph_data_list.append(graph)
@@ -143,18 +143,18 @@ def cif2hgraph(cif, radius:float = 3):
 def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius:float=3.0):
     if root == '':
         root = os. getcwd()
-    directory = root+'\\'+directory
+    directory = root+'/'+directory
     print(f'Searching {directory} for CIF data to convert to hgraphs')
-    with open(f'{directory}\\id_prop.csv') as id_prop:
+    with open(f'{directory}/id_prop.csv') as id_prop:
         id_prop = csv.reader(id_prop)
         id_prop_data = [row for row in id_prop]
     hgraph_data_list = []
     if atom_vecs:
-        with open(f'{directory}\\atom_init.json') as atom_init:
+        with open(f'{directory}/atom_init.json') as atom_init:
             atom_vecs = json.load(atom_init)
             for filename, fileprop in id_prop_data:
                 try:
-                    file = directory+'\\'+filename+'.cif'
+                    file = directory+'/'+filename+'.cif'
                     graph = cif2hgraph(file, radius=radius)
                     graph.y = torch.tensor(float(fileprop))
                     nodes_z = graph.x.tolist()
@@ -167,7 +167,7 @@ def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius
     else:
         for filename, fileprop in id_prop_data:
                 try:
-                    file = directory+'\\'+filename+'.cif'
+                    file = directory+'/'+filename+'.cif'
                     graph = cif2hgraph(file, radius=radius)
                     graph.y = torch.tensor(float(fileprop))
                     hgraph_data_list.append(graph)
