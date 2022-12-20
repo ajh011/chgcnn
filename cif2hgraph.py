@@ -16,12 +16,12 @@ import torch
 #associated with each edge in tuple
 def cif2graphedges(cif_file, radius:float=3):
     struc = CifParser(cif_file).get_structures()[0]
-    nbr_lst = struc.get_neighbor_list(radius, exclude_self=True)
+    nbr_lst = struc.get_neighbor_list(radius, exclude_self=False)
     edge_list=np.stack((nbr_lst[0],nbr_lst[1])).transpose()
     edge_list=torch.tensor(edge_list)
     edge_list_w_dist = (edge_list,torch.tensor(nbr_lst[3]))
     return edge_list_w_dist
-
+5
 
 
 ## CIF -> tuple(tensor([[node_pos], ... ]),tensor([node_atomic_num,...])) ##
@@ -100,19 +100,20 @@ def graph_list_from_cif_dir(directory='cif_data', root='', atom_vecs = True, rad
     return graph_data_list
 
 
-
-
-
-
-
 ## CIF -> tensor([[node_index,...],[hyper_edge_index,...]]) ##
 
 # takes cif file and returns array (2 x num_nodes_in_hedges) of hedge index
 # (as specified in the HypergraphConv doc of PyTorch Geometric)
 # found by collecting neighbors within spec radius for each node in one hedge
-def cif2hyperedges(cif_file, radius: float = 3):
+def cif2hyperedges(cif_file, radius: float = 3, min_rad = False, tolerance = 0.1):
     struc = CifParser(cif_file).get_structures()[0]
-    nbr_lst = struc.get_neighbor_list(radius, exclude_self=True)
+    ##Determines minimum radius and returns neighbor list for within min radius + tolerance
+    if min_rad == True:
+        nbr_lst = struc.get_neighbor_list(r = 25, exclude_self=True)
+        min_rad = np.min(nbr_lst[3])
+        nbr_lst = struc.get_neighbor_list(r = min_rad + tolerance, exclude_self=True)
+    else:
+        nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
     edge_list = np.stack((nbr_lst[0], nbr_lst[1])).transpose()
     edge_list = torch.tensor(edge_list)
 
@@ -131,16 +132,16 @@ def cif2hyperedges(cif_file, radius: float = 3):
     hedge_list = torch.stack((torch.tensor(node_index), torch.tensor(hedge_index)))
     return hedge_list
 
-def cif2hgraph(cif, radius:float = 3):
+def cif2hgraph(cif, radius:float = 3, min_rad = False, tolerance = 0.1):
     pos = cif2nodepos(cif)[0]
     x = cif2nodepos(cif)[1]
-    hedge_indx = cif2hyperedges(cif, radius)
+    hedge_indx = cif2hyperedges(cif, radius, min_rad = False, tolerance = 0.1)
     chgraph = Data(x=x, hyperedge_index=hedge_indx, pos=pos)
     return chgraph
 
 #Returns list of hypergraph data objects (pyg data with hedge_index) from given directory
 
-def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius:float=3.0):
+def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius:float=3.0, min_rad = False, tolerance = 0.1):
     if root == '':
         root = os. getcwd()
     directory = root+'/'+directory
@@ -155,7 +156,7 @@ def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius
             for filename, fileprop in id_prop_data:
                 try:
                     file = directory+'/'+filename+'.cif'
-                    graph = cif2hgraph(file, radius=radius)
+                    graph = cif2hgraph(file, radius=radius, min_rad = False, tolerance = 0.1)
                     graph.y = torch.tensor(float(fileprop))
                     nodes_z = graph.x.tolist()
                     nodes_atom_vec = [atom_vecs[f'{z}'] for z in nodes_z]
@@ -168,7 +169,7 @@ def hgraph_list_from_dir(directory='cif_data', root='', atom_vecs = True, radius
         for filename, fileprop in id_prop_data:
                 try:
                     file = directory+'/'+filename+'.cif'
-                    graph = cif2hgraph(file, radius=radius)
+                    graph = cif2hgraph(file, radius=radius, min_rad = False, tolerance = 0.1)
                     graph.y = torch.tensor(float(fileprop))
                     hgraph_data_list.append(graph)
                     print(f'Added {filename} to hgraph set')
