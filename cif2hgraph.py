@@ -21,7 +21,7 @@ def cif2graphedges(cif_file, radius:float=3):
     edge_list=torch.tensor(edge_list)
     edge_list_w_dist = (edge_list,torch.tensor(nbr_lst[3]))
     return edge_list_w_dist
-5
+
 
 
 ## CIF -> tuple(tensor([[node_pos], ... ]),tensor([node_atomic_num,...])) ##
