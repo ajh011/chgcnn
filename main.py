@@ -1,10 +1,10 @@
 import time
 import torch, shutil, argparse
 import torch.optim as optim
+import numpy as np
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from modelrev import MyModel
-
+from model import MyModel
 
 try:
     import cPickle as pickle
@@ -56,7 +56,7 @@ class ProgressMeter:
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch):
+def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task):
     batch_time = AverageMeter('Batch', ':.4f')
     data_time = AverageMeter('Data', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
@@ -75,8 +75,10 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
         data_time.update(time.time() - end)
         data = data.to(device, non_blocking=True)
         output = model(data)
-        target = data.y.unsqueeze(-1)
-
+        if task == 'regression':
+            target = data.y.view(1)
+        else:
+            target = data.y.long()
         loss = loss_criterion(output, target)
         accu = accuracy_criterion(output, target)
 
@@ -96,7 +98,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
     return losses.avg, accus.avg
 
 
-def validate(model, device, test_loader, loss_criterion, accuracy_criterion):
+def validate(model, device, test_loader, loss_criterion, accuracy_criterion, task):
     batch_time = AverageMeter('Batch', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
     accus = AverageMeter('Accu', ':.4f')
@@ -113,7 +115,10 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion):
 
             data = data.to(device, non_blocking=True)
             output = model(data)
-            target = data.y.unsqueeze(-1)
+            if task == 'regression':
+                target = data.y.view(1)
+            else:
+                target = data.y.long()
 
             loss = loss_criterion(output, target)
             accu = accuracy_criterion(output, target)
@@ -153,15 +158,18 @@ def main():
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=7, metavar='S',
                         help='random seed (default: 7)')
-    parser.add_argument('--print-freq', default=20, type=int,
-                        metavar='N', help='print frequency (default: 20)')
+    parser.add_argument('--print-freq', default=1, type=int,
+                        metavar='N', help='print frequency (default: 1)')
     parser.add_argument('--optim', default='SGD', type=str, metavar='Adam',
                         help='choose an optimizer, SGD or Adam, (default:Adam)')
     parser.add_argument('--resume', default=False, action='store_true',
                         help='Resume from checkpoint')
+    parser.add_argument('--task', default='regression', type=str)
+    parser.add_argument('--num_class', default=2, type=int)
     parser.add_argument('--num-workers', default=0, type=int)
     parser.add_argument('--drop-last', default=False, type=bool)
     parser.add_argument('--pin-memory', default=True, type=bool)
+    parser.add_argument('--dir', default='cifs', type=str)
 
     args = parser.parse_args()
 
@@ -170,31 +178,27 @@ def main():
     torch.manual_seed(args.seed)
     torch.backends.cudnn.benchmark = True
 
+#########################################################################################################################################
 
     with open('relgraph_list.pkl', 'rb') as storage:
         relgraphs, feats_list, hedges = pickle.load(storage)
 
-    print(f'feats_list: {feats_list}')
-    print(f'num graphs: {len(relgraphs)}')
-    print(f'len feats_list: {len(feats_list)}')
 
     for graph,feature in zip(relgraphs,feats_list):
-        print(f'feats length in graph construction: {len(feature)}')
-        print(f'associated feats: {feature}')
         graph.feats = feature
-        #print(f'edge index: {graph.edge_index}')
 
     dataset = relgraphs
 
     feature_dims =  []
     for feat_type in feats_list[0]:
         feature_dims.append(len(feat_type[1][0]))
-    print(feature_dims)
 
     data0 = dataset[0]
     model = MyModel(feature_dims)
     model.to(device)
 
+
+#####################################################################################################################################
 
     n_data = len(dataset)
     train_split = int(n_data * args.train_ratio)
@@ -223,14 +227,28 @@ def main():
         pin_memory=args.pin_memory
     )
 
+    #######################################################################################################################################
+
     if args.optim == 'SGD':
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     elif args.optim == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     else:
         raise ValueError('Optimizer must be SGD or Adam.')
-    loss_criterion = torch.nn.MSELoss()
-    accuracy_criterion = torch.nn.L1Loss()
+
+    if args.task == 'regression':
+        loss_criterion = torch.nn.MSELoss()
+        accuracy_criterion = torch.nn.L1Loss()
+        print('Using MSE training loss and L1 for accuracy')
+    elif args.num_class == 2 and args.task != 'regression':
+        print('CLASSIFICATION NOT CURRENTLY SUPPORTED\n\n\n\nIGNORE FOLLOWING')
+        loss_criterion = torch.nn.NLLLoss()
+        accuracy_criterion = torch.nn.NLLLoss()
+        print('Using NLL for training loss and accuracy')
+    else:
+        loss_criterion = torch.nn.CrossEntropyLoss()
+        accuracy_criterion = torch.nn.CrossEntropyLoss()
+        print('Using cross entropy for training loss and accuracy')
 
     if args.resume:
         print("=> loading checkpoint")
@@ -243,8 +261,8 @@ def main():
 
     for epoch in range(args.start_epoch, args.epochs + 1):
         train_loss, train_accu = train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer,
-                                       epoch)
-        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion)
+                                       epoch, args.task)
+        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, args.task)
         # scheduler.step()
 
         is_best = train_accu < best_accu

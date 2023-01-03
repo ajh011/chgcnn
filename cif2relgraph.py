@@ -355,7 +355,7 @@ def relgraph_list_from_dir(directory='cif', root='', atom_vecs = True, radius:fl
                 edges, feats, hedge_list = cif2reledges(file, radius=radius, features = True)
                 graph = Data()
                 graph.edge_index = torch.tensor(edges, dtype = int)
-                graph.y = torch.tensor(float(fileprop)).view(1)
+                graph.y = torch.tensor(float(fileprop))
                 graph.num_nodes = torch.max(graph.edge_index)
                 relgraphs.append(graph)
                 hedges.append(hedge_list)
