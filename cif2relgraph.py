@@ -49,7 +49,7 @@ def struc2singletons(struc,  hedge_list = [[],[]], tol=0.1, import_feat: bool = 
     if import_feat == True:
         with open(f'{directory}atom_init.json') as atom_init:
             atom_vecs = json.load(atom_init)
-            features[1] = [atom_vecs[f'{z}'] for z in features[1]]
+            features[1] = [torch.tensor(atom_vecs[f'{z}']).float() for z in features[1]]
 
     return hedge_list, features
 
@@ -96,7 +96,8 @@ def struc2pairs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool = 
         hedge_counter += 1
     if gauss_dim != 1:
         ge = gaussian_expansion(dmin = 0 ,dmax = radius + 5*tol, steps = gauss_dim)
-        features[1]=[ge.expand(dist) for dist in features[1]]
+        features[1] = [torch.tensor(ge.expand(dist)).float() for dist in features[1]]
+
 
     
     return hedge_list, features
@@ -225,7 +226,7 @@ def struc2motifs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool =
     for hedge_idx, center_idx, neighbor_lst in zip(neighborhoods[0],neighborhoods[1],neighborhoods[2]):
         feature = lsop.get_order_parameters(struc, center_idx, indices_neighs = neighbor_lst)
         features[0].append(hedge_idx)
-        features[1].append(np.nan_to_num(feature))
+        features[1].append(torch.tensor(np.nan_to_num(feature)).float())
             
     return hedge_list, features
 

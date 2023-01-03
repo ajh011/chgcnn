@@ -33,8 +33,7 @@ class MyModel(nn.Module):
         # an embedding reducing the input dimension from atom_fea_dim to node_dim
         for feat, embedding in zip(feats[0],self.embeddings):
             subset = []
-            for i in feat[1]:
-                x = torch.tensor(np.nan_to_num(np.array(i, dtype=float))).float()
+            for x in feat[1]:
                 x = embedding(x)
                 subset.append(x)
             prop_type = torch.stack(subset, axis = -1)
