@@ -25,7 +25,7 @@ import torch
 ## should be passed first in hgraph construction, since it assumes to be first 
 
 
-def struc2singletons(struc,  hedge_list = [[],[]], tol=0.01, import_feat: bool = False, directory: str = ""):
+def struc2singletons(struc,  hedge_list = [[],[]], tol=0.1, import_feat: bool = False, directory: str = ""):
     singletons = struc.get_neighbor_list(r = tol, exclude_self=False)[0]
     if hedge_list == [[],[]] or hedge_list == []:
         hedge_counter = 0
@@ -355,7 +355,8 @@ def relgraph_list_from_dir(directory='cif', root='', atom_vecs = True, radius:fl
                 edges, feats, hedge_list = cif2reledges(file, radius=radius, features = True)
                 graph = Data()
                 graph.edge_index = torch.tensor(edges, dtype = int)
-                graph.y = torch.tensor(float(fileprop))
+                graph.y = torch.tensor(float(fileprop)).view(1)
+                graph.num_nodes = torch.max(graph.edge_index)
                 relgraphs.append(graph)
                 hedges.append(hedge_list)
                 feats_list.append(feats)
