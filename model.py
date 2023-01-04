@@ -15,7 +15,7 @@ class MyModel(nn.Module):
         self.node_dim = node_dim
         self.num_layers = num_layers
 
-        self.embeddings = []
+        self.embeddings = nn.ModuleList([])
 
         for atom_fea_dim in atom_fea_dims:
             self.embeddings.append(nn.Linear(atom_fea_dim, node_dim))

@@ -145,7 +145,7 @@ def main():
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train (default: 200)')
-    parser.add_argument('--lr', type=float, default=1e-2, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 1e-3)')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
@@ -194,10 +194,9 @@ def main():
         feature_dims.append(len(feat_type[1][0]))
 
     data0 = dataset[0]
-    model = MyModel(feature_dims)
-    model.to(device)
+    model = MyModel(feature_dims).to(device)
 
-
+    
 #####################################################################################################################################
 
     n_data = len(dataset)
