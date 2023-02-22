@@ -2,6 +2,7 @@ import time
 import torch, shutil, argparse
 import torch.optim as optim
 import numpy as np
+import wandb
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
 from model import MyModel
@@ -10,6 +11,8 @@ try:
     import cPickle as pickle
 except ModuleNotFoundError:
     import pickle
+
+
 
 
 class AverageMeter:
@@ -94,7 +97,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         if i % 10 == 0:
             progress.display(i)
-
+        wandb.log({'train-mse': losses.val, 'train-mse-avg': losses.avg, 'train-mae': accus.val, 'train-mae-avg': accus.avg, 'epoch': epoch, 'batch-time': batch_time.val}) 
     return losses.avg, accus.avg
 
 
@@ -131,7 +134,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
 
             if i % 10 == 0:
                 progress.display(i)
-
+            wandb.log({'val-mse': losses.val, 'val-mse-avg': losses.avg, 'val-mae': accus.val, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.val}) 
     return accus.avg
 
 
@@ -171,12 +174,31 @@ def main():
     parser.add_argument('--pin-memory', default=True, type=bool)
     parser.add_argument('--dir', default='cifs', type=str)
 
+
     args = parser.parse_args()
 
     best_accu = 1e6
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
+
+
     torch.backends.cudnn.benchmark = True
+    # start a new wandb run to track this script
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="chgcnn",
+        
+        # track hyperparameters and run metadata
+        config={
+        "learning_rate": args.lr,
+        "architecture": "SAGEConv" ,
+        "dataset": "Formation Energy per Atom",
+        "epochs": args.epochs,
+        "batch_size": args.batch_size
+        }
+    )
+
+
 
 #########################################################################################################################################
 
@@ -275,9 +297,11 @@ def main():
             'args': vars(args),
         }, is_best)
 
+
+
     ckpt = torch.load('model_best.pth.tar')
     print(ckpt['best_accu'])
-
+    wandb.finish()
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)

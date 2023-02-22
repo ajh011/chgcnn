@@ -59,18 +59,21 @@ def struc2singletons(struc,  hedge_list = [[],[]], tol=0.1, import_feat: bool = 
 ## -> [[node_index,...],[hyper_edge_index,...]],[[hyper_edge_index,...],[[gauss_dist_exp,...],...]] ##
 
 ## subfunction for hedge_list responsible for pair-wise hedges
-## can be based on threshold + min_rad or some interatomic radius
+## can be based on threshold * min_rad or some interatomic radius
 
 ## might need to rework to include features in each subfunction
 ## gaussian distance for pairs
 
-def struc2pairs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool = True, tol: float = 0.1, gauss_dim: int = 1):
+## added tentative max_neighbor count of 12, no options included yet
+
+def struc2pairs(struc, hedge_list = [[],[]], radius: float = 8, min_rad: bool = False, tol: float = 2, gauss_dim: int = 40):
     if min_rad == False:
         nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
     elif min_rad == True:
-        nbr_lst = struc.get_neighbor_list(r = 25, exclude_self=True)
+        nbr_lst = struc.get_neighbor_list(r = 12, exclude_self=True)
         min_rad = np.min(nbr_lst[3])
-        nbr_lst = struc.get_neighbor_list(r = min_rad+tol, exclude_self=True)
+        nbr_lst = struc.get_neighbor_list(r = min_rad*tol, exclude_self=True)
+        radius = min_rad*tol
 
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
@@ -82,20 +85,30 @@ def struc2pairs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool = 
         hedge_counter = np.max(hedge_list[1]) + 1
 
     features = [[],[]]
+    n_count=0
+    pair_1_last = pair_center_idx[0]
     ## currently double counts pair-wise edges
     for pair_1,pair_2,dist in zip(pair_center_idx, pair_neighbor_idx,distances):
-        hedge_list[0].append(pair_1)
-        hedge_list[0].append(pair_2)
+        if pair_1 == pair_1_last:
+            n_count +=1
+        else:
+            pair_1_last = pair_1
+            n_count = 1
+        #Max neighbor count of 12 
+        if n_count < 13:
 
-        hedge_list[1].append(hedge_counter)
-        hedge_list[1].append(hedge_counter)
-        
-        features[0].append(hedge_counter)
-        features[1].append(dist)
-        
-        hedge_counter += 1
-    if gauss_dim != 1:
-        ge = gaussian_expansion(dmin = 0 ,dmax = radius + 5*tol, steps = gauss_dim)
+            hedge_list[0].append(pair_1)
+            hedge_list[0].append(pair_2)
+
+            hedge_list[1].append(hedge_counter)
+            hedge_list[1].append(hedge_counter)
+            
+            features[0].append(hedge_counter)
+            features[1].append(dist)
+            
+            hedge_counter += 1
+        if gauss_dim != 1:
+        ge = gaussian_expansion(dmin = 0, dmax = radius, steps = gauss_dim)
         features[1] = [torch.tensor(ge.expand(dist)).float() for dist in features[1]]
 
 
@@ -138,6 +151,9 @@ class gaussian_expansion(object):
 ## currently uses all 35 types of motif order parameters
 ## in LocalStructParams for features
 
+## might need to be concerned about parameters of different numbers of vertices
+## should confirm they are zero when not applicable 
+
 types = [ "cn",
         "sgl_bd",
         "bent",
@@ -176,13 +192,13 @@ types = [ "cn",
 
 
 
-def struc2motifs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool = True, tol: float = 0.1):
+def struc2motifs(struc, hedge_list = [[],[]], radius: float = 6, min_rad: bool = False, tol: float = 1.5):
     if min_rad == False:
         nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
     elif min_rad == True:
         nbr_lst = struc.get_neighbor_list(r = 25, exclude_self=True)
         min_rad = np.min(nbr_lst[3])
-        nbr_lst = struc.get_neighbor_list(r = min_rad+tol, exclude_self=True)
+        nbr_lst = struc.get_neighbor_list(r = min_rad*tol, exclude_self=True)
 
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
@@ -224,32 +240,11 @@ def struc2motifs(struc, hedge_list = [[],[]], radius: float = 3, min_rad: bool =
     
     features = [[],[]]
     for hedge_idx, center_idx, neighbor_lst in zip(neighborhoods[0],neighborhoods[1],neighborhoods[2]):
-        feature = lsop.get_order_parameters(struc, center_idx, indices_neighs = neighbor_lst)
+        feature = np.array(lsop.get_order_parameters(struc, center_idx, indices_neighs = neighbor_lst), dtype = float)
         features[0].append(hedge_idx)
         features[1].append(torch.tensor(np.nan_to_num(feature)).float())
             
     return hedge_list, features
-
-
-
-## CIF -> tensor([[node_index,...],[hyper_edge_index,...]]) ##
-
-# takes cif file and returns array (2 x num_nodes_in_hedges) of hedge index
-# (as specified in the HypergraphConv doc of PyTorch Geometric)
-# found by collecting neighbors within spec radius for each node in one hedge
-
-
-def cif2hedges(cif_file, radius: float = 3, min_rad: bool = True, tol: float = 0.1, features: bool = False):
-    struc = CifParser(cif_file).get_structures()[0]
-    hedge_list = [[],[]]
-    hedge_list, singleton_feat = struc2singletons(struc, hedge_list, import_feat = True)
-    hedge_list, pair_feat = struc2pairs(struc, hedge_list, radius, min_rad, tol)
-    hedge_list, motif_feat = struc2motifs(struc, hedge_list, radius, min_rad, tol)
-    if features == True:
-        return hedge_list, (singleton_feat, pair_feat, motif_feat)
-    elif features == False:
-        return hedge_list
-
 
 
 # repacks hedges in new format for easier down-stream processing
@@ -312,13 +307,13 @@ def relatives2graphedges(relative_list):
 # found by collecting neighbors within spec radius for each node in one hedge
 
 
-def cif2hedges(cif_file, radius: float = 3, min_rad: bool = True, tol: float = 0.1, features: bool = False, gauss_dim: int = 5):
+def cif2hedges(cif_file, radius: float = 8, min_rad: bool = False, tol: float = 0.1, features: bool = False, gauss_dim: int = 5):
     struc = CifParser(cif_file).get_structures()[0]
     hedge_list = [[],[]]
     feats = []
     hedge_list, singleton_feat = struc2singletons(struc, hedge_list, import_feat = True)
     hedge_list, pair_feat = struc2pairs(struc, hedge_list, radius, min_rad, tol, gauss_dim = gauss_dim)
-    hedge_list, motif_feat = struc2motifs(struc, hedge_list, radius, min_rad, tol)
+    hedge_list, motif_feat = struc2motifs(struc, hedge_list, min_rad, tol)
     if features == True:
         return hedge_list, (singleton_feat, pair_feat, motif_feat)
     elif features == False:
@@ -327,7 +322,7 @@ def cif2hedges(cif_file, radius: float = 3, min_rad: bool = True, tol: float = 0
 ## CIF -> array([[graph_edge_1_node_1,...],[graph_edge_1_node_2,...]]) ##
 
 
-def cif2reledges(cif_file, radius: float = 3, min_rad: bool = True, tol: float = 0.1, features: bool = False, gauss_dim: int = 5):
+def cif2reledges(cif_file, radius: float = 8, min_rad: bool = False, tol: float = 1.5, features: bool = False, gauss_dim: int = 40):
     hedge_list, feats = cif2hedges(cif_file, radius, min_rad, tol, features, gauss_dim)
     relative = relatives(hedge_packer(hedge_list))
     edges = np.array(relatives2graphedges(relative))
@@ -338,12 +333,12 @@ def cif2reledges(cif_file, radius: float = 3, min_rad: bool = True, tol: float =
 
 
 
-def relgraph_list_from_dir(directory='cif', root='', atom_vecs = True, radius:float=3.0):
+def relgraph_list_from_dir(directory='cif', root='', atom_vecs = True, radius:float=8.0):
     if root == '':
         root = os. getcwd()
-    directory = root+'\\'+directory
+    directory = root+'/'+directory
     print(f'Searching {directory} for CIF data to convert to hgraphs')
-    with open(f'{directory}\\id_prop.csv') as id_prop:
+    with open(f'{directory}/id_prop.csv') as id_prop:
         id_prop = csv.reader(id_prop)
         id_prop_data = [row for row in id_prop]
     relgraphs = []
@@ -351,19 +346,19 @@ def relgraph_list_from_dir(directory='cif', root='', atom_vecs = True, radius:fl
     feats_list = []
 
     for filename, fileprop in id_prop_data:
-            try:
-                file = directory+'\\'+filename+'.cif'
-                edges, feats, hedge_list = cif2reledges(file, radius=radius, features = True)
-                graph = Data()
-                graph.edge_index = torch.tensor(edges, dtype = int)
-                graph.y = torch.tensor(float(fileprop))
-                graph.num_nodes = torch.max(graph.edge_index)
-                relgraphs.append(graph)
-                hedges.append(hedge_list)
-                feats_list.append(feats)
-                print(f'Added {filename} to relgraph set')
-            except:
-                print(f'Error with {filename}, confirm existence')
+        try:
+            file = directory+'/'+filename+'.cif'
+            edges, feats, hedge_list = cif2reledges(file, radius=radius, features = True)
+            graph = Data()
+            graph.edge_index = torch.tensor(edges, dtype = int)
+            graph.y = torch.tensor(float(fileprop))
+            graph.num_nodes = torch.max(graph.edge_index)
+            relgraphs.append(graph)
+            hedges.append(hedge_list)
+            feats_list.append(feats)
+            print(f'Added {filename} to relgraph set')
+        except:
+            print(f'Error with {filename}, confirm existence')
                 
     print('Done generating relatives graph data with features')
     return relgraphs, feats_list, hedges
