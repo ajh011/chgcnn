@@ -212,7 +212,7 @@ def touches(one, two):
         return False
     
 ##Define function that generates relatives heterograph edge indices
-def hetero_rel_edges(hedge, cell_vector = False):
+def hetero_rel_edges(hgraph, cell_vector = True):
     atoms, bonds, motifs = decompose(hgraph)
     edges = {}
     atom_atom_hom = [[],[]]
@@ -301,9 +301,9 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=8.0):
             hgraphs.append(hgraph)
             rel_edges = hetero_rel_edges(hgraph)
             atoms, bonds, motifs = decompose(hgraph)
-            graph['atom'].x = torch.tensor([atom[3] for atom in atoms]).float()
-            graph['bond'].x = torch.tensor([bond[3] for bond in bonds]).float()
-            graph['motif'].x =torch.tensor([motif[3] for motif in motifs]).float()
+            graph['atom'].x = [atom[3] for atom in atoms]
+            graph['bond'].x = torch.tensor(np.array([bond[3] for bond in bonds],dtype = float))
+            graph['motif'].x =torch.tensor(np.array([motif[3] for motif in motifs],dtype = float))
             graph['cell'].x = torch.rand(64, dtype = torch.float)
 
             graph['atom', 'bonds', 'atom'].edge_index = rel_edges['atom', 'bonds', 'atom']
