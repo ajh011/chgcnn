@@ -317,7 +317,7 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=8.0):
             for string in orders:
                 graph['cell', 'contains', string].edge_index = rel_edges['cell', 'contains', string]
 
-            graph.y = fileprop
+            graph.y = torch.tensor(fileprop)
             rel_graphs.append(graph)
 
             print(f'Added {filename} to relgraph set')

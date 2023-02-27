@@ -3,9 +3,11 @@ import torch, shutil, argparse
 import torch.optim as optim
 import numpy as np
 import wandb
+from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from hetero_model import CHGCNN
+from hetero_model import HeteroRelConv 
+import torch_geometric.transforms as T
 
 try:
     import cPickle as pickle
@@ -82,8 +84,8 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
             target = data.y.view(1)
         else:
             target = data.y.long()
-        loss = loss_criterion(output['cell'], target)
-        accu = accuracy_criterion(output['cell'], target)
+        loss = loss_criterion(output, target)
+        accu = accuracy_criterion(output, target)
 
         losses.update(loss.item(), target.size(0))
         accus.update(accu.item(), target.size(0))
@@ -123,8 +125,8 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
             else:
                 target = data.y.long()
 
-            loss = loss_criterion(output['cell'], target)
-            accu = accuracy_criterion(output['cell'], target)
+            loss = loss_criterion(output,target)
+            accu = accuracy_criterion(output,target)
 
             losses.update(loss.item(), target.size(0))
             accus.update(accu.item(), target.size(0))
@@ -202,17 +204,42 @@ def main():
 
 #########################################################################################################################################
 
-    with open('hetero_relgraph_list.pkl', 'rb') as storage:
+    pkl_loc = 'hetero_relgraph_list.pkl'
+    with open(pkl_loc, 'rb') as storage:
         relgraphs = pickle.load(storage)
 
+    print(f'Importing data from {pkl_loc}')
+    #### CLEANING UP MESSY HETERODATA
+    dataset = []
+    for data in relgraphs:
+        c = data['cell'].x.reshape([1,64])
+        a = torch.stack(data['atom'].x, dim=0)
+        data['cell'].x = c.to(torch.float)
+        data['atom'].x = a.to(torch.float)
+        data['motif'].x = data['motif'].x.to(torch.float)
+        data['bond'].x = data['bond'].x.to(torch.float)
+        data.edge_index_dict = {key: torch.tensor(value).long() for key, value in data.edge_index_dict.items()}
 
-    dataset = relgraphs
+        data['atom','in','cell'].edge_index = [data['cell','contains','atom'].edge_index[i] for i in [1,0]]
+        data['bond','in','cell'].edge_index = [data['cell','contains','bond'].edge_index[i] for i in [1,0]] 
+        data['motif','in','cell'].edge_index = [data['cell','contains','motif'].edge_index[i] for i in [1,0]]
+        data.edge_index_dict['motif','in','cell'] = torch.stack([torch.tensor(data['cell','contains','motif'].edge_index[i]) for i in [1,0]], dim=0).long()
+        data.edge_index_dict['bond','in','cell'] = torch.stack([torch.tensor(data['cell','contains','bond'].edge_index[i]) for i in [1,0]], dim=0).long()
+        data.edge_index_dict['atom','in','cell'] = torch.stack([torch.tensor(data['cell','contains','atom'].edge_index[i]) for i in [1,0]], dim=0).long()
+        data.y = torch.tensor(float(data.y)).float()
+        dataset.append(data)
+
+
+
+
+    print('Initializing model...') 
+    ##Convert to undirected edges
+    #dataset = [T.ToUndirected()(data) for data in dataset]
     data0 = dataset[0]
-
-    model = CHGCNN().to(device)
-    model = to_hetero(model, data.metadata(), aggr='sum')
-
-    
+    data0.to(device)
+    model = HeteroRelConv().to(device)
+    with torch.no_grad():  # Initialize lazy modules.
+        out = model(data0.x_dict, data0.edge_index_dict)
 #####################################################################################################################################
 
     n_data = len(dataset)
@@ -229,7 +256,7 @@ def main():
         shuffle=True,
         num_workers=args.num_workers,
         drop_last=args.drop_last,
-        pin_memory=args.pin_memory,
+        pin_memory=False, #args.pin_memory,
         generator=torch.Generator().manual_seed(args.seed)
     )
 
