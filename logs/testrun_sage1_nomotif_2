@@ -1,0 +1,5 @@
+nohup: ignoring input
+Traceback (most recent call last):
+  File "/home/ajh/chgcnn/uhmain_conly.py", line 2, in <module>
+    import torch, shutil, argparse
+ModuleNotFoundError: No module named 'torch'

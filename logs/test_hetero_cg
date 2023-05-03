@@ -1,0 +1,28 @@
+nohup: ignoring input
+wandb: Currently logged in as: ajh. Use `wandb login --relogin` to force relogin
+wandb: wandb version 0.13.10 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.13.4
+wandb: Run data is saved locally in /home/ajh/chgcnn/wandb/run-20230226_180415-2i39qw2c
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run colorful-frog-46
+wandb: ⭐️ View project at https://wandb.ai/ajh/chgcnn
+wandb: 🚀 View run at https://wandb.ai/ajh/chgcnn/runs/2i39qw2c
+Importing data from hetero_relgraph_list.pkl
+Initializing model...
+Traceback (most recent call last):
+  File "/home/ajh/chgcnn/hetero_main_cg.py", line 334, in <module>
+    main()
+  File "/home/ajh/chgcnn/hetero_main_cg.py", line 240, in main
+    model = HeteroRelConv().to(device)
+  File "/home/ajh/chgcnn/hetero_model_cg.py", line 17, in __init__
+    ('atom','bonds','atom'): CGConv((-1)),
+  File "/home/ajh/anaconda3/envs/chgcnn/lib/python3.10/site-packages/torch_geometric/nn/conv/cg_conv.py", line 65, in __init__
+    self.lin_f = Linear(sum(channels) + dim, channels[1], bias=bias)
+  File "/home/ajh/anaconda3/envs/chgcnn/lib/python3.10/site-packages/torch/nn/modules/linear.py", line 96, in __init__
+    self.weight = Parameter(torch.empty((out_features, in_features), **factory_kwargs))
+RuntimeError: Trying to create tensor with negative dimension -1: [-1, -2]
+wandb: Waiting for W&B process to finish... (failed 1). Press Control-C to abort syncing.
+wandb: - 0.001 MB of 0.001 MB uploaded (0.000 MB deduped)wandb: \ 0.001 MB of 0.007 MB uploaded (0.000 MB deduped)wandb: | 0.007 MB of 0.007 MB uploaded (0.000 MB deduped)wandb: Synced colorful-frog-46: https://wandb.ai/ajh/chgcnn/runs/2i39qw2c
+wandb: Synced 6 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20230226_180415-2i39qw2c/logs
