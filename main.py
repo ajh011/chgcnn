@@ -6,7 +6,7 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from model_new import HeteroRelConv 
+from model import HeteroRelConv 
 import torch_geometric.transforms as T
 
 try:

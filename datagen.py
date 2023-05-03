@@ -1,13 +1,13 @@
-from hetero_data_test import hetero_relgraph_list_from_dir
+from datafunc import hetero_relgraph_list_from_dir
 try:
     import cPickle as pickle
 except ModuleNotFoundError:
     import pickle
 
 
-data_loc = 'hetero_relgraph_list_test.pkl'
+data_loc = 'und_hetero_relgraph_list_4a.pkl'
 
-relgraph_list = hetero_relgraph_list_from_dir()
+relgraph_list = hetero_relgraph_list_from_dir(directory = 'cif', undirected = True)
 
 
 with open(data_loc, 'wb') as storage:
