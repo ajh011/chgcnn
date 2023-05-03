@@ -8,18 +8,27 @@ from torch_geometric.nn import to_hetero
 
 
 class HeteroRelConv(torch.nn.Module):
-    def __init__(self, h_dim = 64, n_layers = 3, orders = ['atom','bond','motif']):
+    def __init__(self, h_dim = 64, n_layers = 1, orders = ['atom','bond','motif']):
         super().__init__()
 
         self.convs = torch.nn.ModuleList() 
         for i in range(n_layers):
             conv = HeteroConv({
                 ('atom','bonds','atom'): SAGEConv(-1, h_dim),
+                ('atom','in','bond'): SAGEConv((-1,-1), h_dim),
+                ('atom','in','motif'): SAGEConv((-1,-1), h_dim),
                 ('bond','touches','bond'): SAGEConv(-1, h_dim),
+                ('bond','in','motif'): SAGEConv((-1,-1), h_dim),
+                ('bond','contains','atom'): SAGEConv((-1,-1), h_dim),
                 ('motif','touches','motif'): SAGEConv(-1, h_dim),
+                ('motif','contains','atom'): SAGEConv((-1,-1), h_dim),
+                ('motif','contains','bond'): SAGEConv((-1,-1), h_dim),
                 ('atom','in','cell'): SAGEConv((-1,-1), h_dim),
                 ('bond','in','cell'): SAGEConv((-1,-1), h_dim),
                 ('motif','in','cell'): SAGEConv((-1,-1), h_dim),
+                ('cell','contains','atom'): SAGEConv((-1,-1), h_dim),
+                ('cell','contains','bond'): SAGEConv((-1,-1), h_dim),
+                ('cell','contains','motif'): SAGEConv((-1,-1), h_dim), 
                 }, aggr='sum')
             self.convs.append(conv)
         self.lins = torch.nn.ModuleList()
