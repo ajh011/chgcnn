@@ -81,7 +81,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
         data = data.to(device, non_blocking=True)
         output = model(data.x_dict, data.edge_index_dict)
         if task == 'regression':
-            target = data.y.view(1)
+            target = data.y.view((-1,1))
         else:
             target = data.y.long()
         loss = loss_criterion(output, target)
@@ -121,7 +121,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
             data = data.to(device, non_blocking=True)
             output = model(data.x_dict, data.edge_index_dict)
             if task == 'regression':
-                target = data.y.view(1)
+                target = data.y.view((-1,1))
             else:
                 target = data.y.long()
 
@@ -173,7 +173,7 @@ def main():
     parser.add_argument('--num_class', default=2, type=int)
     parser.add_argument('--num-workers', default=0, type=int)
     parser.add_argument('--drop-last', default=False, type=bool)
-    parser.add_argument('--pin-memory', default=True, type=bool)
+    parser.add_argument('--pin-memory', default=False, type=bool)
     parser.add_argument('--dir', default='cifs', type=str)
 
 
@@ -219,8 +219,8 @@ def main():
     print('Initializing model...') 
     ##Convert to undirected edges
     #dataset = [T.ToUndirected()(data) for data in dataset]
+    dataset = [data.to(device) for data in dataset]
     data0 = dataset[0]
-    data0.to(device)
     model = HeteroRelConv().to(device)
     with torch.no_grad():  # Initialize lazy modules.
         out = model(data0.x_dict, data0.edge_index_dict)
