@@ -56,7 +56,7 @@ class gaussian_expansion(object):
         step_size = drange/self.steps
         if sig == None:
             sig = step_size/2
-        ds = [self.dmin + i*step_size for i in range(self.steps)]
+        ds = [self.dmin + i*step_size for i in range(self.steps+1)]
         expansion = [math.exp(-(distance-center)**2/(2*sig**2))  for center in ds]
         expansion = [i if i > tolerance else 0 for i in expansion]
         return expansion
