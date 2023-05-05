@@ -174,8 +174,7 @@ def main():
     parser.add_argument('--num-workers', default=0, type=int)
     parser.add_argument('--drop-last', default=False, type=bool)
     parser.add_argument('--pin-memory', default=False, type=bool)
-    parser.add_argument('--dir', default='cifs', type=str)
-
+    parser.add_argument('--dir', default='und_hetero_relgraph_list_4a.pkl', type=str)
 
     args = parser.parse_args()
 
@@ -204,7 +203,7 @@ def main():
 
 #########################################################################################################################################
 
-    pkl_loc = 'und_hetero_relgraph_list_4a.pkl'
+    pkl_loc = args.dir
     with open(pkl_loc, 'rb') as storage:
         relgraphs = pickle.load(storage)
 
