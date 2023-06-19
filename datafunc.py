@@ -4,6 +4,7 @@ import math
 import os
 import csv
 import json
+import itertools
 
 from pymatgen.io.cif import CifParser
 from pymatgen.core.structure import Structure
@@ -49,7 +50,7 @@ class gaussian_expansion(object):
         assert dmin<dmax
         self.dmin = dmin
         self.dmax = dmax
-        self.steps = steps
+        self.steps = steps-1
         
     def expand(self, distance, sig=None, tolerance = 0.01):
         drange = self.dmax-self.dmin
@@ -73,7 +74,7 @@ def struc2pairs(struc, hgraph, radius: float = 4, min_rad: bool = False, max_nei
         ge = gaussian_expansion(dmin = 0, dmax = radius, steps = gauss_dim)
             
     features = []
-    n_count=0
+    n_count = 0
     bond_index = 0
     pair_1_last = pair_center_idx[0]
     ## currently double counts pair-wise edges/makes undirected edges
@@ -90,6 +91,61 @@ def struc2pairs(struc, hgraph, radius: float = 4, min_rad: bool = False, max_nei
             hgraph.append(['bond', bond_index, [pair_1, pair_2], dist])
             bond_index += 1
         
+    return hgraph
+
+
+
+#Add ALIGNN-like triplets with angle feature vector
+def struc2triplets(struc, hgraph, max_neighbor=13, gauss_dim = 40):
+    nbr_lst = struc.get_neighbor_list(r = 4, exclude_self=True)
+    pair_center_idx = nbr_lst[0]
+    pair_neighbor_idx = nbr_lst[1]
+    offsets = nbr_lst[2]
+    
+    if gauss_dim != 1:
+        ge = gaussian_expansion(dmin = 0, dmax = 1, steps = gauss_dim)
+    
+    n_count = 0
+    triplet_index = 0
+    last_center_idx = pair_center_idx[0]
+    local_neighs = []
+    for center_idx,pair_idx,offset in zip(pair_center_idx, pair_neighbor_idx, offsets):
+        if last_center_idx == center_idx:
+            n_count +=1
+            if n_count <= max_neighbor:
+                local_neighs.append((pair_idx,offset))
+        else:
+            for i in itertools.combinations(local_neighs, 2):
+                (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
+                offset_1 = np.array(offset_1)
+                offset_2 = np.array(offset_2)
+                cos_angle = np.dot(offset_1,offset_2)/(np.linalg.norm(offset_1)*np.linalg.norm(offset_2))
+                
+                #Stop-gap to fix nans from zero displacement vectors
+                cos_angle = np.nan_to_num(cos_angle, nan=1)
+                
+                if gauss_dim != 1:
+                    cos_angle = ge.expand(cos_angle)
+                hgraph.append(['triplet', triplet_index, [last_center_idx, pair_1_idx, pair_2_idx], cos_angle])
+                triplet_index += 1
+            n_count = 1
+            last_center_idx=center_idx
+            local_neighs = []
+            local_neighs.append((pair_idx, offset))
+
+    for i in itertools.combinations(local_neighs, 2):
+        (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
+        offset_1 = np.nan_to_num(offset_1)
+        offset_2 = np.nan_to_num(offset_2)
+        cos_angle = np.dot(offset_1,offset_2)/(np.linalg.norm(offset_1)*np.linalg.norm(offset_2))
+       
+        #Stop-gap to fix nans from zero displacement vectors
+        cos_angle = np.nan_to_num(cos_angle, nan=1)
+        if gauss_dim != 1:
+            cos_angle = ge.expand(cos_angle)
+        hgraph.append(['triplet', triplet_index, [last_center_idx, pair_1_idx, pair_2_idx], cos_angle])
+        triplet_index += 1
+
     return hgraph
 
 #Types of structure-order parameters to calculate
@@ -178,6 +234,7 @@ def hgraph_gen(struc, dir = '', cell = False):
     hgraph = []
     hgraph = struc2singletons(struc, hgraph, directory= dir)
     hgraph = struc2pairs(struc, hgraph)
+    hgraph = struc2triplets(struc, hgraph)
     hgraph = struc2motifs(struc, hgraph)
     if cell == True:
         hgraph = struc2cell(struc, hgraph)
@@ -193,7 +250,7 @@ def ordertype(hgraph, string):
             order_hedge.append(hedge)
     return order_hedge    
 
-def decompose(hgraph, order_types=['atom','bond','motif']):
+def decompose(hgraph, order_types=['atom','bond','triplet','motif']):
     sep = []
     for string in order_types:
         sep.append(ordertype(hgraph, string))
@@ -213,7 +270,7 @@ def touches(one, two):
     
 ##Define function that generates relatives heterograph edge indices
 def hetero_rel_edges(hgraph, cell_vector = True):
-    atoms, bonds, motifs = decompose(hgraph)
+    atoms, bonds, triplets, motifs = decompose(hgraph)
     edges = {}
     atom_atom_hom = [[],[]]
     for bond in bonds:
@@ -228,6 +285,14 @@ def hetero_rel_edges(hgraph, cell_vector = True):
                 atom_bonds_het[0].append(atom[1])
                 atom_bonds_het[1].append(bond[1])
     edges['atom','in','bond'] = atom_bonds_het
+
+    atom_trip_het = [[],[]]
+    for atom in atoms:
+        for triplet in triplets:
+            if contains(triplet[2],atom[2]):
+                atom_trip_het[0].append(atom[1])
+                atom_trip_het[1].append(triplet[1])
+    edges['atom','in','triplet'] = atom_trip_het
 
     atom_motifs_het = [[],[]]
     for atom in atoms:
@@ -247,6 +312,13 @@ def hetero_rel_edges(hgraph, cell_vector = True):
 
     edges['bond','touches','bond'] = bond_bond_hom
 
+    bond_trip_het = [[],[]]
+    for bond in bonds:
+        for triplet in triplets:
+            if contains(triplet[2],bond[2]):
+                bond_trip_het[0].append(bond[1])
+                bond_trip_het[1].append(triplet[1])
+    edges['bond','in','triplet'] = bond_trip_het
 
     bond_motifs_het = [[],[]]
     for bond in bonds:
@@ -256,6 +328,24 @@ def hetero_rel_edges(hgraph, cell_vector = True):
                 bond_motifs_het[1].append(motif[1])
     edges['bond','in','motif'] = bond_motifs_het
 
+
+    trip_trip_hom = [[],[]]
+    for t1 in triplets:
+        for t2 in triplets:
+            if t1!= t2:
+                if touches(t1, t2):
+                    trip_trip_hom[0].append(t1[1])
+                    trip_trip_hom[1].append(t2[1])
+    edges['triplet', 'touches', 'triplet'] = trip_trip_hom
+
+    trip_motifs_het = [[],[]]
+    for triplet in triplets:
+        for motif in motifs:
+            if contains(motif, triplet):
+                trip_motifs_het[0].append(triplet[1])
+                trip_motifs_het[1].append(motif[1])
+    edges['triplet', 'in', 'motif'] = trip_motifs_het
+
     mot_mot_hom = [[],[]]
     for m1 in motifs:
         for m2 in motifs:
@@ -263,7 +353,6 @@ def hetero_rel_edges(hgraph, cell_vector = True):
                 if touches(m1, m2):
                     mot_mot_hom[0].append(m1[1])
                     mot_mot_hom[1].append(m2[1])
-
     edges['motif','touches','motif'] = mot_mot_hom
 
     if cell_vector == True:
@@ -282,7 +371,7 @@ def hetero_rel_edges(hgraph, cell_vector = True):
 ## Turn into useful function that just takes directory as input
 
 
-def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, undirected = False):
+def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, undirected = True):
     if root == '':
         root = os. getcwd()
     directory = root+'/'+directory
@@ -300,28 +389,36 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, un
             hgraph = hgraph_gen(struc, cell=True, dir=directory+'/')
             hgraphs.append(hgraph)
             rel_edges = hetero_rel_edges(hgraph)
-            atoms, bonds, motifs = decompose(hgraph)
+            atoms, bonds, triplets, motifs = decompose(hgraph)
             graph['atom'].x = torch.stack([torch.tensor(atom[3],dtype = torch.float) for atom in atoms],dim=0)
             graph['bond'].x = torch.tensor(np.array([bond[3] for bond in bonds]),dtype = torch.float)
+            graph['triplet'].x = torch.tensor(np.array([triplet[3] for triplet in triplets]),dtype = torch.float)
             graph['motif'].x =torch.tensor(np.array([motif[3] for motif in motifs]),dtype = torch.float)
             graph['cell'].x = torch.rand([1,64], dtype = torch.float)
 
             graph['atom', 'bonds', 'atom'].edge_index = torch.tensor(rel_edges['atom', 'bonds', 'atom']).long()
             graph['atom', 'in', 'bond'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'bond']).long()
+            graph['atom', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'triplet']).long()
             graph['atom', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'motif']).long()
             graph['bond', 'touches', 'bond'].edge_index =  torch.tensor(rel_edges['bond', 'touches', 'bond']).long()
+            graph['bond', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'triplet']).long()
             graph['bond', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'motif']).long()
+            graph['triplet', 'touches', 'triplet'].edge_index =  torch.tensor(rel_edges['triplet', 'touches', 'triplet']).long() 
+            graph['triplet', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['triplet', 'in', 'motif']).long()
             graph['motif', 'touches', 'motif'].edge_index =  torch.tensor(rel_edges['motif', 'touches', 'motif']).long()
 
-            orders = ['motif', 'atom', 'bond']
-            for string in orders:
-                graph['cell', 'contains', string].edge_index = torch.tensor(rel_edges['cell', 'contains', string]).long()
-                if undirected == True:
+            #orders = ['motif', 'atom', 'bond']
+            #for string in orders:
+            #    graph['cell', 'contains', string].edge_index = torch.tensor(rel_edges['cell', 'contains', string]).long()
+            #    if undirected == True:
                     ####FORM UNDIRECTED EDGES FROM UNMATCHED PAIRS####
-                    graph[string, 'in', 'cell'].edge_index = torch.stack([torch.tensor(rel_edges['cell','contains',string][i]) for i in [1,0]], dim=0).long()
+            #        graph[string, 'in', 'cell'].edge_index = torch.stack([torch.tensor(rel_edges['cell','contains',string][i]) for i in [1,0]], dim=0).long()
             if undirected == True:
                 graph['motif','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','motif'][i]) for i in [1,0]], dim=0).long()
                 graph['motif','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','motif'][i]) for i in [1,0]], dim=0).long()
+                graph['motif','contains','triplet'].edge_index =torch.stack([torch.tensor(rel_edges['triplet','in','motif'][i]) for i in [1,0]], dim=0).long()
+                graph['triplet','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','triplet'][i]) for i in [1,0]], dim=0).long()
+                graph['triplet','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','triplet'][i]) for i in [1,0]], dim=0).long()
                 graph['bond','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','bond'][i]) for i in [1,0]], dim=0).long()
 
         
