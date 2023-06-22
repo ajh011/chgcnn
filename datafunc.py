@@ -5,6 +5,7 @@ import os
 import csv
 import json
 import itertools
+import time
 
 from pymatgen.io.cif import CifParser
 from pymatgen.core.structure import Structure
@@ -383,6 +384,7 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, un
     hgraphs = []
     for filename, fileprop in id_prop_data:
         try:
+            time_start = time.time()
             file = directory+'/'+filename+'.cif'
             struc = CifParser(file).get_structures()[0]
             graph = HeteroData()
@@ -426,8 +428,8 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, un
 
             graph.y = torch.tensor(float(fileprop), dtype = torch.float)
             rel_graphs.append(graph)
-
-            print(f'Added {filename} to relgraph set')
+            time_end = time.time()
+            print(f'Added {filename} to relgraph set (in {time_end-time_start}s)')
         except:
             print(f'Error with {filename}, confirm existence')
                 
