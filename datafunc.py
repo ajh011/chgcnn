@@ -120,8 +120,14 @@ def struc2triplets(struc, hgraph, max_neighbor=13, gauss_dim = 40):
                 (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
                 offset_1 = np.array(offset_1)
                 offset_2 = np.array(offset_2)
-                cos_angle = np.dot(offset_1,offset_2)/(np.linalg.norm(offset_1)*np.linalg.norm(offset_2))
-                
+                m = struc.lattice.matrix
+                edge1 = offset_1 @ m
+                edge2 = offset_2 @ m
+
+                edge1 = np.stack(edge1)
+                edge2 = np.stack(edge2)
+                cos_angle = (edge1 * edge2).sum(-1) / (np.linalg.norm(edge1, axis=-1) * np.linalg.norm(edge2, axis=-1))
+
                 #Stop-gap to fix nans from zero displacement vectors
                 cos_angle = np.nan_to_num(cos_angle, nan=1)
                 
@@ -133,15 +139,21 @@ def struc2triplets(struc, hgraph, max_neighbor=13, gauss_dim = 40):
             last_center_idx=center_idx
             local_neighs = []
             local_neighs.append((pair_idx, offset))
-
     for i in itertools.combinations(local_neighs, 2):
         (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
-        offset_1 = np.nan_to_num(offset_1)
-        offset_2 = np.nan_to_num(offset_2)
-        cos_angle = np.dot(offset_1,offset_2)/(np.linalg.norm(offset_1)*np.linalg.norm(offset_2))
-       
+        offset_1 = np.array(offset_1)
+        offset_2 = np.array(offset_2)
+        m = struc.lattice.matrix
+        edge1 = offset_1 @ m
+        edge2 = offset_2 @ m
+
+        edge1 = np.stack(edge1)
+        edge2 = np.stack(edge2)
+        cos_angle = (edge1 * edge2).sum(-1) / (np.linalg.norm(edge1, axis=-1) * np.linalg.norm(edge2, axis=-1))
+
         #Stop-gap to fix nans from zero displacement vectors
         cos_angle = np.nan_to_num(cos_angle, nan=1)
+        
         if gauss_dim != 1:
             cos_angle = ge.expand(cos_angle)
         hgraph.append(['triplet', triplet_index, [last_center_idx, pair_1_idx, pair_2_idx], cos_angle])
@@ -187,7 +199,6 @@ types = [ "cn",
         "sq_face_cap_trig_pris"]
 
 #Add motif hedges to hgraph
-
 def struc2motifs(struc, hgraph, types = types, lsop_tol = 0.05):
     neighborhoods = []
     vnn = VoronoiNN(tol=0.1, targets=None)
@@ -207,7 +218,6 @@ def struc2motifs(struc, hgraph, types = types, lsop_tol = 0.05):
                 feat[n] = 0
             elif f > 1:
                 feat[n] = f
-            ##CONSIDER INVERT LSOP SO THAT 1 corresponds to shape as opposed to 0 abs(f-1) and make 1 when 0.
             ##Account for tolerance:
             elif f > lsop_tol:
                 feat[n] = f
@@ -382,6 +392,7 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, un
         id_prop_data = [row for row in id_prop]
     rel_graphs=[]
     hgraphs = []
+    ttime_start = time.time()
     for filename, fileprop in id_prop_data:
         try:
             time_start = time.time()
@@ -429,9 +440,10 @@ def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, un
             graph.y = torch.tensor(float(fileprop), dtype = torch.float)
             rel_graphs.append(graph)
             time_end = time.time()
-            print(f'Added {filename} to relgraph set (in {time_end-time_start}s)')
+            print(f'Added {filename} to relgraph set (in {time_end-time_start}s -- total elapsed {round(time_end-ttime_start,3)}s/{round((time_end-ttime_start)/3600, 5)}hr)')
         except:
             print(f'Error with {filename}, confirm existence')
-                
-    print('Done generating relatives graph data with features')
+
+    ttime_end = time.time()         
+    print(f'Done generating relatives graph data with features\n(in {round(ttime_end-ttime_start,3)}s or {round((ttime_end-ttime_start)/(3600),3)}hr)')
     return rel_graphs
