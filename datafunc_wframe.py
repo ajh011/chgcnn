@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 
 #generate hypergraph dictionary elements for singleton sets
-def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, directory: str = ""):
+def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, directory: str = "cif"):
     singletons = struc.get_neighbor_list(r = tol, exclude_self=False)[0]
     atom_count = 0
     for node in singletons:
@@ -43,7 +43,7 @@ def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, di
         i+=1
     #import features from CGCNN atom_init file
     if import_feat == True:
-        with open(f'{directory}atom_init.json') as atom_init:
+        with open(osp.join(directory,'atom_init.json')) as atom_init:
             atom_vecs = json.load(atom_init)
             features[0] = [torch.tensor(atom_vecs[f'{z}']).float() for z in features[0]]
     for hedge, feature in zip(hgraph, features[0]):
@@ -250,7 +250,7 @@ def struc2cell(struc, hgraph, random_x = True):
     return hgraph
 
 ## Now bring together process into overall hgraph generation
-def hgraph_gen(struc, dir = '', cell = False):
+def hgraph_gen(struc, dir = 'cif', cell = False):
     hgraph = []
     hgraph = struc2singletons(struc, hgraph, directory= dir)
     hgraph = struc2pairs(struc, hgraph)
@@ -429,14 +429,14 @@ def pyg_heterodata(hgraph, undirected = True):
 ##Build data structure in form of (vanilla) pytorch dataset (not PytorchGeometric!)
 class CrystalHypergraphDataset(Dataset):
     def __init__(self, cif_dir, dataset_ratio=1.0, radius=4.0, n_nbr=12):
-        super().init()
+        super().__init__()
 
         self.radius = radius
         self.n_nbr = n_nbr
 
         self.cif_dir = cif_dir
 
-        with open(f'{directory}/id_prop.csv') as id_prop:
+        with open(f'{cif_dir}/id_prop.csv') as id_prop:
             id_prop = csv.reader(id_prop)
             self.id_prop_data = [row for row in id_prop]
 
@@ -446,23 +446,26 @@ class CrystalHypergraphDataset(Dataset):
     def __getitem__(self, index, report = True):
         mp_id, target = self.id_prop_data[index]
         crystal_path = osp.join(self.cif_dir, mp_id)
-        crystal_path = osp.join(crystal_path, '.cif')
+        crystal_path = crystal_path + '.cif'
         if report == True:
             start = time.time()
         struc = CifParser(crystal_path).get_structures()[0]
-        hgraph = hgraph_gen(struc, cell=False, dir=directory+'/')
+        hgraph = hgraph_gen(struc, cell=False, dir=self.cif_dir)
         relgraph = pyg_heterodata(hgraph, undirected = True)
         relgraph.y = torch.tensor(float(target), dtype = torch.float)
         if report == True:
             duration = time.time()-start
-            print(f'Processed {mp-id} in {round(duration,5)} sec')
-        return relgraph
+            print(f'Processed {mp_id} in {round(duration,5)} sec')
+        return {
+            'relgraph': relgraph,
+            'mp_id' : mp_id
+            }
     
 
 def process_data(idx):
     try:
         d = dataset[idx]
-        torch.save(d, 'dataset/{}.pt'.format(d['mp_id']))
+        torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
     except:
         print(f'Cannot process index {idx}')
 
