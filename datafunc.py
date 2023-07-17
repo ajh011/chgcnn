@@ -52,18 +52,25 @@ def get_nbrlist(struc, nn_strategy = 'crys', max_nn=12):
 
     nn = NN[nn_strategy]
 
-    nbr_list = []
+    center_idxs = []
+    neighbor_idxs = []
+    offsets = []
+    distances = []
 
     for n in range(len(struc.sites)):
         neigh = []
         neigh = [neighbor for neighbor in nn.get_nn(struc, n)]
         for neighbor in neigh[:max_nn-1]:
-                neighbor_index = neighbor.index
-                offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
-                m = struc.lattice.matrix
-                offset = offset @ m
-                distance = np.linalg.norm(offset)
-                nbr_list.append([n, neighbor_index, offset, distance])
+            neighbor_index = neighbor.index
+            offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
+            m = struc.lattice.matrix
+            offset = offset @ m
+            distance = np.linalg.norm(offset)
+            center_idxs.append(n)
+            neighbor_idxs.append(neighbor_index)
+            offsets.append(offset)
+            distances.append(distance)
+    nbr_list = [center_idxs, neighbor_idxs, offsets, distances])
 
     return nbr_list
 
@@ -152,7 +159,7 @@ def struc2pairs(struc, hgraph, nbr_lst = [], radius: float = 4, min_rad: bool = 
 
 
 #Add ALIGNN-like triplets with angle feature vector
-def struc2triplets(struc, hgraph, nbr_lst = [], max_neighbor=12, radius = 4, gauss_dim = 40):
+def struc2triplets(struc, hgraph, nbr_lst = [], radius = 4, max_neighbor=12, gauss_dim = 40):
     if nbr_lst == []:
         nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
 
