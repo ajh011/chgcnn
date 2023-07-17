@@ -21,14 +21,6 @@ from pymatgen.analysis.local_env import \
     BrunnerNN_relative, \
     MinimumVIRENN
 
-import torch
-from torch_geometric.data import HeteroData, Data
-from torch_geometric.loader import DataLoader
-from torch.utils.data import Dataset
-
-
-from multiprocessing import Pool
-from tqdm import tqdm
 
 #generate custom neighbor list to be used by all struc2's with nearest neighbor determination technique as parameter
 def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
@@ -57,9 +49,13 @@ def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
     offsets = []
     distances = []
 
+    reformat_nbr_lst = []
+
     for n in range(len(struc.sites)):
         neigh = []
         neigh = [neighbor for neighbor in nn.get_nn(struc, n)]
+
+        neighbor_reformat=[]
         for neighbor in neigh[:max_nn-1]:
             neighbor_index = neighbor.index
             offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
@@ -70,9 +66,12 @@ def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
             neighbor_idxs.append(neighbor_index)
             offsets.append(offset)
             distances.append(distance)
+
+            neighbor_reformat.append((neighbor_index, offset, distance))
+        reformat_nbr_lst.append((n,neighbor_reformat))
     nbr_list = [center_idxs, neighbor_idxs, offsets, distances]
 
-    return nbr_list
+    return nbr_list, reformat_nbr_lst
 
 
 #generate hypergraph dictionary elements for singleton sets
@@ -159,69 +158,31 @@ def struc2pairs(struc, hgraph, nbr_lst = [], radius: float = 4, min_rad: bool = 
 
 
 #Add ALIGNN-like triplets with angle feature vector
-def struc2triplets(struc, hgraph, nbr_lst = [], radius = 4, max_neighbor=12, gauss_dim = 40):
-    if nbr_lst == []:
-        nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
-
-    pair_center_idx = nbr_lst[0]
-    pair_neighbor_idx = nbr_lst[1]
-    offsets = nbr_lst[2]
+def struc2triplets(struc, hgraph, nbr_lst, radius = 4, max_neighbor=12, gauss_dim = 10):
+    #requires second output of get_nbr_lst!!!!! leaving this as reminder
+    reformat_nbr_lst = nbr_lst
     
     if gauss_dim != 1:
-        ge = gaussian_expansion(dmin = 0, dmax = 1, steps = gauss_dim)
+        ge = gaussian_expansion(dmin = -1, dmax = 1, steps = gauss_dim)
     
-    n_count = 0
     triplet_index = 0
-    last_center_idx = pair_center_idx[0]
-    local_neighs = []
-    for center_idx,pair_idx,offset in zip(pair_center_idx, pair_neighbor_idx, offsets):
-        if last_center_idx == center_idx:
-            n_count +=1
-            if n_count <= max_neighbor+1:
-                local_neighs.append((pair_idx,offset))
-        else:
-            for i in itertools.combinations(local_neighs, 2):
-                (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
-                offset_1 = np.array(offset_1)
-                offset_2 = np.array(offset_2)
-                m = struc.lattice.matrix
-                edge1 = offset_1 @ m
-                edge2 = offset_2 @ m
+    for cnt_idx, neighborset in reformat_nbr_lst:
+            for i in itertools.combinations(neighborset, 2):
+                (pair_1_idx, offset_1, distance_1), (pair_2_idx, offset_2, distance_2) = i
 
-                edge1 = np.stack(edge1)
-                edge2 = np.stack(edge2)
-                cos_angle = (edge1 * edge2).sum(-1) / (np.linalg.norm(edge1, axis=-1) * np.linalg.norm(edge2, axis=-1))
+                offset_1 = np.stack(offset_1)
+                offset_2 = np.stack(offset_2)
+                cos_angle = (offset_1 * offset_2).sum(-1) / (np.linalg.norm(offset_1, axis=-1) * np.linalg.norm(offset_2, axis=-1))
 
                 #Stop-gap to fix nans from zero displacement vectors
                 cos_angle = np.nan_to_num(cos_angle, nan=1)
                 
                 if gauss_dim != 1:
+                    print(cos_angle)
                     cos_angle = ge.expand(cos_angle)
-                hgraph.append(['triplet', triplet_index, [last_center_idx, pair_1_idx, pair_2_idx], cos_angle])
+            
+                hgraph.append(['triplet', triplet_index, [cnt_idx, pair_1_idx, pair_2_idx], cos_angle])
                 triplet_index += 1
-            n_count = 1
-            last_center_idx=center_idx
-            local_neighs = []
-            local_neighs.append((pair_idx, offset))
-    for i in itertools.combinations(local_neighs, 2):
-        (pair_1_idx, offset_1), (pair_2_idx, offset_2) = i
-        offset_1 = np.array(offset_1)
-        offset_2 = np.array(offset_2)
-        m = struc.lattice.matrix
-        edge1 = offset_1 @ m
-        edge2 = offset_2 @ m
-
-        edge1 = np.stack(edge1)
-        edge2 = np.stack(edge2)
-        cos_angle = (edge1 * edge2).sum(-1) / (np.linalg.norm(edge1, axis=-1) * np.linalg.norm(edge2, axis=-1))
-
-        #Stop-gap to fix nans from zero displacement vectors
-        cos_angle = np.nan_to_num(cos_angle, nan=1)
-        
-        if gauss_dim != 1:
-            cos_angle = ge.expand(cos_angle)
-        hgraph.append(['triplet', triplet_index, [last_center_idx, pair_1_idx, pair_2_idx], cos_angle])
-        triplet_index += 1
 
     return hgraph
 
@@ -307,10 +268,10 @@ def struc2cell(struc, hgraph, random_x = True):
 ## Now bring together process into overall hgraph generation
 def hgraph_gen(struc, dir = 'cif', cell = False):
     hgraph = []
-    nbr_lst = get_nbrlist(struc)
+    nbr_lst,reformat_nbr_lst = get_nbrlist(struc)
     hgraph = struc2singletons(struc, hgraph, directory= dir)
     hgraph = struc2pairs(struc, hgraph, nbr_lst = nbr_lst)
-    hgraph = struc2triplets(struc, hgraph, nbr_lst = nbr_lst)
+    hgraph = struc2triplets(struc, hgraph, nbr_lst = reformat_nbr_lst)
     #hgraph = struc2motifs(struc, hgraph)
     if cell == True:
         hgraph = struc2cell(struc, hgraph)
