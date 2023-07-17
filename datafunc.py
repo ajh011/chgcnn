@@ -2,6 +2,7 @@ import numpy as np
 import math
 
 import os
+import os.path as osp
 import csv
 import json
 import itertools
@@ -11,11 +12,56 @@ from pymatgen.io.cif import CifParser
 from pymatgen.core.structure import Structure
 from pymatgen.analysis.local_env import LocalStructOrderParams, VoronoiNN
 
+
 import torch
-from torch_geometric.data import HeteroData
+from torch_geometric.data import HeteroData, Data
+from torch_geometric.loader import DataLoader
+from torch.utils.data import Dataset
+
+
+from multiprocessing import Pool
+from tqdm import tqdm
+
+#generate custom neighbor list to be used by all struc2's with nearest neighbor determination technique as parameter
+def get_nbrlist(struc, nn_strategy = 'crys', max_nn=12):
+    NN = {
+        # these methods consider too many neighbors which may lead to unphysical resutls
+        'voro': VoronoiNN(tol=0.2),
+        'econ': EconNN(),
+        'brunner': BrunnerNN_relative(),
+
+        # these two methods will consider motifs center at anions
+        'crys': CrystalNN(),
+        'jmol': JmolNN(),
+
+        # not sure
+        'minokeeffe': MinimumOKeeffeNN(),
+
+        # maybe the best
+        'mind': MinimumDistanceNN(),
+        'minv': MinimumVIRENN()
+    }
+
+    nn = NN[nn_strategy]
+
+    nbr_list = []
+
+    for n in range(len(struc.sites)):
+        neigh = []
+        neigh = [neighbor for neighbor in nn.get_nn(struc, n)]
+        for neighbor in neigh[:max_nn-1]:
+                neighbor_index = neighbor.index
+                offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
+                m = struc.lattice.matrix
+                offset = offset @ m
+                distance = np.linalg.norm(offset)
+                nbr_list.append([n, neighbor_index, offset, distance])
+
+    return nbr_list
+
 
 #generate hypergraph dictionary elements for singleton sets
-def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, directory: str = ""):
+def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, directory: str = "cif"):
     singletons = struc.get_neighbor_list(r = tol, exclude_self=False)[0]
     atom_count = 0
     for node in singletons:
@@ -34,7 +80,7 @@ def struc2singletons(struc,  hgraph = [], tol=0.01, import_feat: bool = True, di
         i+=1
     #import features from CGCNN atom_init file
     if import_feat == True:
-        with open(f'{directory}atom_init.json') as atom_init:
+        with open(osp.join(directory,'atom_init.json')) as atom_init:
             atom_vecs = json.load(atom_init)
             features[0] = [torch.tensor(atom_vecs[f'{z}']).float() for z in features[0]]
     for hedge, feature in zip(hgraph, features[0]):
@@ -64,8 +110,9 @@ class gaussian_expansion(object):
         return expansion
     
 #Add bond nodes to hgraph list
-def struc2pairs(struc, hgraph, radius: float = 4, min_rad: bool = False, max_neighbor: float = 13, tol: float = 2, gauss_dim: int = 24):
-    nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
+def struc2pairs(struc, hgraph, nbr_lst = [], radius: float = 4, min_rad: bool = False, max_neighbor: float = 13, tol: float = 2, gauss_dim: int = 24):
+    if nbr_lst == []:
+        nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
 
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
@@ -97,8 +144,10 @@ def struc2pairs(struc, hgraph, radius: float = 4, min_rad: bool = False, max_nei
 
 
 #Add ALIGNN-like triplets with angle feature vector
-def struc2triplets(struc, hgraph, max_neighbor=13, gauss_dim = 40):
-    nbr_lst = struc.get_neighbor_list(r = 4, exclude_self=True)
+def struc2triplets(struc, hgraph, nbr_lst = [], max_neighbor=12, radius = 4, gauss_dim = 40):
+    if nbr_lst == []:
+        nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
+
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
     offsets = nbr_lst[2]
@@ -113,7 +162,7 @@ def struc2triplets(struc, hgraph, max_neighbor=13, gauss_dim = 40):
     for center_idx,pair_idx,offset in zip(pair_center_idx, pair_neighbor_idx, offsets):
         if last_center_idx == center_idx:
             n_count +=1
-            if n_count <= max_neighbor:
+            if n_count <= max_neighbor+1:
                 local_neighs.append((pair_idx,offset))
         else:
             for i in itertools.combinations(local_neighs, 2):
@@ -241,12 +290,13 @@ def struc2cell(struc, hgraph, random_x = True):
     return hgraph
 
 ## Now bring together process into overall hgraph generation
-def hgraph_gen(struc, dir = '', cell = False):
+def hgraph_gen(struc, dir = 'cif', cell = False):
     hgraph = []
+    nbr_lst = get_nbrlist(struc)
     hgraph = struc2singletons(struc, hgraph, directory= dir)
-    hgraph = struc2pairs(struc, hgraph)
-    hgraph = struc2triplets(struc, hgraph)
-    hgraph = struc2motifs(struc, hgraph)
+    hgraph = struc2pairs(struc, hgraph, nbr_lst = nbr_lst)
+    hgraph = struc2triplets(struc, hgraph, nbr_lst = nbr_lst)
+    #hgraph = struc2motifs(struc, hgraph)
     if cell == True:
         hgraph = struc2cell(struc, hgraph)
     
@@ -377,73 +427,100 @@ def hetero_rel_edges(hgraph, cell_vector = True):
     
     return edges
 
+##Form pytorch geometric HeteroData (heterograph) from hgraph
+def pyg_heterodata(hgraph, undirected = True):
+    graph = HeteroData()
+    atoms, bonds, triplets, motifs = decompose(hgraph)
+    rel_edges = hetero_rel_edges(hgraph)
+
+    graph['atom'].x = torch.stack([torch.tensor(atom[3],dtype = torch.float) for atom in atoms],dim=0)
+    graph['bond'].x = torch.tensor(np.array([bond[3] for bond in bonds]),dtype = torch.float)
+    graph['triplet'].x = torch.tensor(np.array([triplet[3] for triplet in triplets]),dtype = torch.float)
+    graph['motif'].x =torch.tensor(np.array([motif[3] for motif in motifs]),dtype = torch.float)
+    #graph['cell'].x = torch.rand([1,64], dtype = torch.float)
+    
+    graph['atom', 'bonds', 'atom'].edge_index = torch.tensor(rel_edges['atom', 'bonds', 'atom']).long()
+    graph['atom', 'in', 'bond'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'bond']).long()
+    graph['atom', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'triplet']).long()
+    graph['atom', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'motif']).long()
+    graph['bond', 'touches', 'bond'].edge_index =  torch.tensor(rel_edges['bond', 'touches', 'bond']).long()
+    graph['bond', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'triplet']).long()
+    graph['bond', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'motif']).long()
+    graph['triplet', 'touches', 'triplet'].edge_index =  torch.tensor(rel_edges['triplet', 'touches', 'triplet']).long() 
+    graph['triplet', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['triplet', 'in', 'motif']).long()
+    graph['motif', 'touches', 'motif'].edge_index =  torch.tensor(rel_edges['motif', 'touches', 'motif']).long()
+
+    #orders = ['motif', 'atom', 'bond']
+    #for string in orders:
+    #    graph['cell', 'contains', string].edge_index = torch.tensor(rel_edges['cell', 'contains', string]).long()
+    #    if undirected == True:
+            ####FORM UNDIRECTED EDGES FROM UNMATCHED PAIRS####
+    #        graph[string, 'in', 'cell'].edge_index = torch.stack([torch.tensor(rel_edges['cell','contains',string][i]) for i in [1,0]], dim=0).long()
+    if undirected == True:
+        graph['motif','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','motif'][i]) for i in [1,0]], dim=0).long()
+        graph['motif','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','motif'][i]) for i in [1,0]], dim=0).long()
+        graph['motif','contains','triplet'].edge_index =torch.stack([torch.tensor(rel_edges['triplet','in','motif'][i]) for i in [1,0]], dim=0).long()
+        graph['triplet','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','triplet'][i]) for i in [1,0]], dim=0).long()
+        graph['triplet','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','triplet'][i]) for i in [1,0]], dim=0).long()
+        graph['bond','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','bond'][i]) for i in [1,0]], dim=0).long()
+    return graph
 
 
-## Turn into useful function that just takes directory as input
+
+##Build data structure in form of (vanilla) pytorch dataset (not PytorchGeometric!)
+class CrystalHypergraphDataset(Dataset):
+    def __init__(self, cif_dir, dataset_ratio=1.0, radius=4.0, n_nbr=12):
+        super().__init__()
+
+        self.radius = radius
+        self.n_nbr = n_nbr
+
+        self.cif_dir = cif_dir
+
+        with open(f'{cif_dir}/id_prop.csv') as id_prop:
+            id_prop = csv.reader(id_prop)
+            self.id_prop_data = [row for row in id_prop]
+
+    def __len__(self):
+        return len(self.id_prop_data)
+    
+    def __getitem__(self, index, report = True):
+        mp_id, target = self.id_prop_data[index]
+        crystal_path = osp.join(self.cif_dir, mp_id)
+        crystal_path = crystal_path + '.cif'
+        if report == True:
+            start = time.time()
+        struc = CifParser(crystal_path).get_structures()[0]
+        hgraph = hgraph_gen(struc, cell=False, dir=self.cif_dir)
+        relgraph = pyg_heterodata(hgraph, undirected = True)
+        relgraph.y = torch.tensor(float(target), dtype = torch.float)
+        if report == True:
+            duration = time.time()-start
+            print(f'Processed {mp_id} in {round(duration,5)} sec')
+        return {
+            'relgraph': relgraph,
+            'mp_id' : mp_id
+            }
+    
+
+def process_data(idx):
+    try:
+        d = dataset[idx]
+        torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
+    except:
+        print(f'Cannot process index {idx}')
 
 
-def hetero_relgraph_list_from_dir(directory='cif', root='', radius:float=4.0, undirected = True):
-    if root == '':
-        root = os. getcwd()
-    directory = root+'/'+directory
-    print(f'Searching {directory} for CIF data to convert to hgraphs')
-    with open(f'{directory}/id_prop.csv') as id_prop:
-        id_prop = csv.reader(id_prop)
-        id_prop_data = [row for row in id_prop]
-    rel_graphs=[]
-    hgraphs = []
-    ttime_start = time.time()
-    for filename, fileprop in id_prop_data:
-        try:
-            time_start = time.time()
-            file = directory+'/'+filename+'.cif'
-            struc = CifParser(file).get_structures()[0]
-            graph = HeteroData()
-            hgraph = hgraph_gen(struc, cell=True, dir=directory+'/')
-            hgraphs.append(hgraph)
-            rel_edges = hetero_rel_edges(hgraph)
-            atoms, bonds, triplets, motifs = decompose(hgraph)
-            graph['atom'].x = torch.stack([torch.tensor(atom[3],dtype = torch.float) for atom in atoms],dim=0)
-            graph['bond'].x = torch.tensor(np.array([bond[3] for bond in bonds]),dtype = torch.float)
-            graph['triplet'].x = torch.tensor(np.array([triplet[3] for triplet in triplets]),dtype = torch.float)
-            graph['motif'].x =torch.tensor(np.array([motif[3] for motif in motifs]),dtype = torch.float)
-            graph['cell'].x = torch.rand([1,64], dtype = torch.float)
+def run_process(N=None, processes=10):
+    if N is None:
+        N = len(dataset)
 
-            graph['atom', 'bonds', 'atom'].edge_index = torch.tensor(rel_edges['atom', 'bonds', 'atom']).long()
-            graph['atom', 'in', 'bond'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'bond']).long()
-            graph['atom', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'triplet']).long()
-            graph['atom', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'motif']).long()
-            graph['bond', 'touches', 'bond'].edge_index =  torch.tensor(rel_edges['bond', 'touches', 'bond']).long()
-            graph['bond', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'triplet']).long()
-            graph['bond', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'motif']).long()
-            graph['triplet', 'touches', 'triplet'].edge_index =  torch.tensor(rel_edges['triplet', 'touches', 'triplet']).long() 
-            graph['triplet', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['triplet', 'in', 'motif']).long()
-            graph['motif', 'touches', 'motif'].edge_index =  torch.tensor(rel_edges['motif', 'touches', 'motif']).long()
+    pool = Pool(processes)
 
-            #orders = ['motif', 'atom', 'bond']
-            #for string in orders:
-            #    graph['cell', 'contains', string].edge_index = torch.tensor(rel_edges['cell', 'contains', string]).long()
-            #    if undirected == True:
-                    ####FORM UNDIRECTED EDGES FROM UNMATCHED PAIRS####
-            #        graph[string, 'in', 'cell'].edge_index = torch.stack([torch.tensor(rel_edges['cell','contains',string][i]) for i in [1,0]], dim=0).long()
-            if undirected == True:
-                graph['motif','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','motif'][i]) for i in [1,0]], dim=0).long()
-                graph['motif','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','motif'][i]) for i in [1,0]], dim=0).long()
-                graph['motif','contains','triplet'].edge_index =torch.stack([torch.tensor(rel_edges['triplet','in','motif'][i]) for i in [1,0]], dim=0).long()
-                graph['triplet','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','triplet'][i]) for i in [1,0]], dim=0).long()
-                graph['triplet','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','triplet'][i]) for i in [1,0]], dim=0).long()
-                graph['bond','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','bond'][i]) for i in [1,0]], dim=0).long()
-
-        
+    for _ in tqdm(pool.imap_unordered(process_data, range(N)), total=N):
+        pass
 
 
-            graph.y = torch.tensor(float(fileprop), dtype = torch.float)
-            rel_graphs.append(graph)
-            time_end = time.time()
-            print(f'Added {filename} to relgraph set (in {time_end-time_start}s -- total elapsed {round(time_end-ttime_start,3)}s/{round((time_end-ttime_start)/3600, 5)}hr)')
-        except:
-            print(f'Error with {filename}, confirm existence')
-
-    ttime_end = time.time()         
-    print(f'Done generating relatives graph data with features\n(in {round(ttime_end-ttime_start,3)}s or {round((ttime_end-ttime_start)/(3600),3)}hr)')
-    return rel_graphs
+if __name__ == '__main__':
+    dataset = CrystalHypergraphDataset('cif')
+    run_process()
