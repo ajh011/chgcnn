@@ -31,7 +31,7 @@ from multiprocessing import Pool
 from tqdm import tqdm
 
 #generate custom neighbor list to be used by all struc2's with nearest neighbor determination technique as parameter
-def get_nbrlist(struc, nn_strategy = 'crys', max_nn=12):
+def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
     NN = {
         # these methods consider too many neighbors which may lead to unphysical resutls
         'voro': VoronoiNN(tol=0.2),
@@ -70,7 +70,7 @@ def get_nbrlist(struc, nn_strategy = 'crys', max_nn=12):
             neighbor_idxs.append(neighbor_index)
             offsets.append(offset)
             distances.append(distance)
-    nbr_list = [center_idxs, neighbor_idxs, offsets, distances])
+    nbr_list = [center_idxs, neighbor_idxs, offsets, distances]
 
     return nbr_list
 
