@@ -186,7 +186,6 @@ def struc2triplets(struc, hgraph, nbr_lst, radius = 4, max_neighbor=12, gauss_di
                 cos_angle = np.nan_to_num(cos_angle, nan=1)
                 
                 if gauss_dim != 1:
-                    print(cos_angle)
                     cos_angle = ge.expand(cos_angle)
             
                 hgraph.append(['triplet', triplet_index, [cnt_idx, pair_1_idx, pair_2_idx], cos_angle])
