@@ -10,8 +10,16 @@ import time
 
 from pymatgen.io.cif import CifParser
 from pymatgen.core.structure import Structure
-from pymatgen.analysis.local_env import LocalStructOrderParams, VoronoiNN
-
+from pymatgen.analysis.local_env import \
+    LocalStructOrderParams, \
+    VoronoiNN, \
+    CrystalNN, \
+    JmolNN, \
+    MinimumDistanceNN, \
+    MinimumOKeeffeNN, \
+    EconNN, \
+    BrunnerNN_relative, \
+    MinimumVIRENN
 
 import torch
 from torch_geometric.data import HeteroData, Data
