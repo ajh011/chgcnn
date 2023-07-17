@@ -21,6 +21,14 @@ from pymatgen.analysis.local_env import \
     BrunnerNN_relative, \
     MinimumVIRENN
 
+import torch
+from torch_geometric.data import HeteroData, Data
+from torch_geometric.loader import DataLoader
+from torch.utils.data import Dataset
+
+
+from multiprocessing import Pool
+from tqdm import tqdm
 
 #generate custom neighbor list to be used by all struc2's with nearest neighbor determination technique as parameter
 def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
