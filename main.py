@@ -79,7 +79,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         data_time.update(time.time() - end)
         data = data.to(device, non_blocking=True)
-        output = model(data.x_dict, data.edge_index_dict)
+        output = model(data.x_dict, data.edge_index_dict, data.batch_dict['atom'])
         if task == 'regression':
             target = data.y.view((-1,1))
         else:
@@ -119,7 +119,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
         for i, data in enumerate(test_loader):
 
             data = data.to(device, non_blocking=True)
-            output = model(data.x_dict, data.edge_index_dict)
+            output = model(data.x_dict, data.edge_index_dict, data.batch_dict['atom'])
             if task == 'regression':
                 target = data.y.view((-1,1))
             else:
@@ -222,7 +222,7 @@ def main():
     data0 = dataset[0]
     model = HeteroRelConv().to(device)
     with torch.no_grad():  # Initialize lazy modules.
-        out = model(data0.x_dict, data0.edge_index_dict)
+        out = model(data0.x_dict, data0.edge_index_dict, data0.batch_dict['atom'])
 #####################################################################################################################################
 
     n_data = len(dataset)
