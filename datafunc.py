@@ -132,9 +132,7 @@ class gaussian_expansion(object):
         return expansion
     
 #Add bond nodes to hgraph list
-def struc2pairs(struc, hgraph, nbr_lst = [], radius: float = 4, min_rad: bool = False, max_neighbor: float = 13, tol: float = 2, gauss_dim: int = 24):
-    if nbr_lst == []:
-        nbr_lst = struc.get_neighbor_list(r = radius, exclude_self=True)
+def struc2pairs(struc, hgraph, nbr_lst, gauss_dim: int = 24):
 
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
@@ -143,30 +141,21 @@ def struc2pairs(struc, hgraph, nbr_lst = [], radius: float = 4, min_rad: bool = 
     if gauss_dim != 1:
         ge = gaussian_expansion(dmin = 0, dmax = radius, steps = gauss_dim)
             
-    features = []
-    n_count = 0
     bond_index = 0
-    pair_1_last = pair_center_idx[0]
     ## currently double counts pair-wise edges/makes undirected edges
     for pair_1,pair_2,dist in zip(pair_center_idx, pair_neighbor_idx,distances):
-        #Accounts for max_neighbor
-        if pair_1 == pair_1_last:
-            n_count +=1
-        else:
-            pair_1_last = pair_1
-            n_count = 1
-        if n_count < max_neighbor:
-            if gauss_dim != 1:
-                dist = ge.expand(dist)
-            hgraph.append(['bond', bond_index, [pair_1, pair_2], dist])
-            bond_index += 1
-        
+        if gauss_dim != 1:
+            dist = ge.expand(dist)
+        hgraph.append(['bond', bond_index, [pair_1, pair_2], dist])
+        bond_index += 1
+    
     return hgraph
 
 
 
 #Add ALIGNN-like triplets with angle feature vector
-def struc2triplets(struc, hgraph, nbr_lst, radius = 4, max_neighbor=12, gauss_dim = 10):
+def struc2triplets(struc, hgraph, nbr_lst, gauss_dim = 10):
+
     #requires second output of get_nbr_lst!!!!! leaving this as reminder
     reformat_nbr_lst = nbr_lst
     
@@ -194,7 +183,7 @@ def struc2triplets(struc, hgraph, nbr_lst, radius = 4, max_neighbor=12, gauss_di
     return hgraph
 
 #Types of structure-order parameters to calculate
-types = [ "cn",
+all_types = [ "cn",
         "sgl_bd",
         "bent",
         "tri_plan",
@@ -231,14 +220,16 @@ types = [ "cn",
         "sq_face_cap_trig_pris"]
 
 #Add motif hedges to hgraph
-def struc2motifs(struc, hgraph, types = types, lsop_tol = 0.05):
+def struc2motifs(struc, hgraph, nbr_lst, types = all_types, lsop_tol = 0.05):
+    reformat_nbr_lst = nbr_lst
+
     neighborhoods = []
-    vnn = VoronoiNN(tol=0.1, targets=None)
     ####IMPORTANT: REQUIRES YOU RUN struc2atoms FIRST####
-    for n in range(len(struc.sites)):
-        neigh = [neighbor.properties['index'] for neighbor in vnn.get_nn(struc, n)]
-        neighborhoods.append([n, neigh])
-        neigh = []
+    for n, neighborset in reformat_nbr_lst:
+        neigh_idxs = []
+        for i in neighborset:
+            neigh_idxs.append(i[0])
+        neighborhoods.append([n, neigh_idxs])
         
     lsop = LocalStructOrderParams(types)
     motif_index = 0
@@ -262,6 +253,7 @@ def struc2motifs(struc, hgraph, types = types, lsop_tol = 0.05):
 
     return hgraph
 
+
 #Include unit cell hedge for pooling
 def struc2cell(struc, hgraph, random_x = True):
     if random_x == True:
@@ -277,9 +269,9 @@ def hgraph_gen(struc, dir = 'cif', cell = False):
     hgraph = []
     nbr_lst,reformat_nbr_lst = get_nbrlist(struc)
     hgraph = struc2singletons(struc, hgraph, directory= dir)
-    hgraph = struc2pairs(struc, hgraph, nbr_lst = nbr_lst)
-    hgraph = struc2triplets(struc, hgraph, nbr_lst = reformat_nbr_lst)
-    #hgraph = struc2motifs(struc, hgraph)
+    hgraph = struc2pairs(struc, hgraph, nbr_lst)
+    hgraph = struc2triplets(struc, hgraph, reformat_nbr_lst)
+    hgraph = struc2motifs(struc, hgraph, reformat_nbr_lst)
     if cell == True:
         hgraph = struc2cell(struc, hgraph)
     
