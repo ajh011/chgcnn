@@ -132,7 +132,7 @@ class gaussian_expansion(object):
         return expansion
     
 #Add bond nodes to hgraph list
-def struc2pairs(struc, hgraph, nbr_lst, gauss_dim: int = 24):
+def struc2pairs(struc, hgraph, nbr_lst, radius = 4.5, gauss_dim: int = 24):
 
     pair_center_idx = nbr_lst[0]
     pair_neighbor_idx = nbr_lst[1]
