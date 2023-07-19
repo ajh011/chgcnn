@@ -201,9 +201,9 @@ def main():
     )
 
 
-    #########################################################################################################################################
-    print(f'Finding data in {self.dir}...')
-    dataset = InMemoryCrystalHypergraphDataset(self.dir)
+    ######################################################################################
+    print(f'Finding data in {args.dir}...')
+    dataset = InMemoryCrystalHypergraphDataset(args.dir)
 
     print('Initializing model...') 
     #dataset = [data.to(device) for data in dataset]
@@ -211,7 +211,7 @@ def main():
     model = HeteroRelConv().to(device)
     #with torch.no_grad():  # Initialize lazy modules.
     #    out = model(data0.x_dict, data0.edge_index_dict, data0.batch_dict['atom'])
-    #####################################################################################################################################
+    ######################################################################################
 
     n_data = len(dataset)
     train_split = int(n_data * args.train_ratio)
@@ -240,7 +240,7 @@ def main():
         pin_memory=args.pin_memory
     )
 
-    #######################################################################################################################################
+    ###########################################################################################
 
     if args.optim == 'SGD':
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
