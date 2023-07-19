@@ -477,7 +477,7 @@ class CrystalHypergraphDataset(Dataset):
             'mp_id' : mp_id
             }
     
-class MemoryCrystalHypergraphDataset(Dataset):
+class InMemoryCrystalHypergraphDataset(Dataset):
     def __init__(self, data_dir, csv_dir = ''):
         super().init()
 

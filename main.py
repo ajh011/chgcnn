@@ -6,6 +6,7 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
+from data import InMemoryCrystalHypergraphDataset
 from model import HeteroRelConv 
 import torch_geometric.transforms as T
 
@@ -174,7 +175,7 @@ def main():
     parser.add_argument('--num-workers', default=0, type=int)
     parser.add_argument('--drop-last', default=False, type=bool)
     parser.add_argument('--pin-memory', default=False, type=bool)
-    parser.add_argument('--dir', default='und_hetero_relgraph_list_4a.pkl', type=str)
+    parser.add_argument('--dir', default='dataset', type=str)
 
     args = parser.parse_args()
 
@@ -200,30 +201,17 @@ def main():
     )
 
 
+    #########################################################################################################################################
+    print(f'Finding data in {self.dir}...')
+    dataset = InMemoryCrystalHypergraphDataset(self.dir)
 
-#########################################################################################################################################
-
-    pkl_loc = args.dir
-    with open(pkl_loc, 'rb') as storage:
-        relgraphs = pickle.load(storage)
-
-    print(f'Importing data from {pkl_loc}')
-    #### CLEANING UP MESSY HETERODATA
-    dataset = []
-    for graph in relgraphs:
-        graph['atom'].x  = graph.x_dict['atom'].float()
-        graph['bond'].x  = graph.x_dict['bond'].float()
-        graph['motif'].x  = graph.x_dict['motif'].float()
-        dataset.append(graph)
     print('Initializing model...') 
-    ##Convert to undirected edges
-    #dataset = [T.ToUndirected()(data) for data in dataset]
-    dataset = [data.to(device) for data in dataset]
-    data0 = dataset[0]
+    #dataset = [data.to(device) for data in dataset]
+    #data0 = dataset[0]
     model = HeteroRelConv().to(device)
-    with torch.no_grad():  # Initialize lazy modules.
-        out = model(data0.x_dict, data0.edge_index_dict, data0.batch_dict['atom'])
-#####################################################################################################################################
+    #with torch.no_grad():  # Initialize lazy modules.
+    #    out = model(data0.x_dict, data0.edge_index_dict, data0.batch_dict['atom'])
+    #####################################################################################################################################
 
     n_data = len(dataset)
     train_split = int(n_data * args.train_ratio)
@@ -256,8 +244,11 @@ def main():
 
     if args.optim == 'SGD':
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        print(f'SGD chosen as optimizer with lr {args.lr}, mom {args.momentum}, wd {args.weight_decay}')
     elif args.optim == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        print(f'Adam chosen as optimizer with lr {args.lr}, wd {args.weight_decay}')
+
     else:
         raise ValueError('Optimizer must be SGD or Adam.')
 
