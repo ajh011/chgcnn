@@ -497,10 +497,12 @@ class InMemoryCrystalHypergraphDataset(Dataset):
 
     def __getitem__(self, index):
         mp_id = self.ids[index]
-        file_dir = osp.join(data_dir, mp_id + '.pt')
-        relgraph = torch.load(file_dir)['relgraph']
+        file_dir = osp.join(self.data_dir, mp_id + '.pt')
+        print(f'looking for {mp_id} in {file_dir}')
+        data = torch.load(file_dir)
+ 
 
-        return relgraph
+        return data
     
 
 def process_data(idx, ids_dir):
