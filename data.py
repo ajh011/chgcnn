@@ -479,7 +479,7 @@ class CrystalHypergraphDataset(Dataset):
     
 class InMemoryCrystalHypergraphDataset(Dataset):
     def __init__(self, data_dir, csv_dir = ''):
-        super().init()
+        super().__init__()
 
         if csv_dir == '':
             csv_dir = data_dir
