@@ -487,10 +487,10 @@ class InMemoryCrystalHypergraphDataset(Dataset):
         self.csv_dir = csv_dir
         self.data_dir = data_dir
 
-        with open(osp.join(csv_dir, 'id_prop.csv')) as id_prop:
-            id_prop = csv.reader(id_prop)
-            self.ids = [row[0] for row in id_prop]
-
+        with open(osp.join(csv_dir, 'ids.csv')) as id_file:
+            ids_csv = csv.reader(id_file)
+            ids = [row[0] for 
+            self.ids = ids
     
     def __len__(self):
         return len(self.ids)
@@ -498,7 +498,6 @@ class InMemoryCrystalHypergraphDataset(Dataset):
     def __getitem__(self, index):
         mp_id = self.ids[index]
         file_dir = osp.join(self.data_dir, mp_id + '.pt')
-        print(f'looking for {mp_id} in {file_dir}')
         data = torch.load(file_dir)
  
 
@@ -510,7 +509,7 @@ def process_data(idx):
         try:
             d = dataset[idx]
             torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
-            ids.write(d['mp_id'])
+            ids.write(d['mp_id']+'\n')
 
         except:
             print(f'Cannot process index {idx}')
