@@ -369,7 +369,7 @@ def hetero_rel_edges(hgraph, cell_vector = True):
     for t1 in triplets:
         for t2 in triplets:
             if t1!= t2:
-                if touches(t1, t2):
+                if touches(t1[2], t2[2]):
                     trip_trip_hom[0].append(t1[1])
                     trip_trip_hom[1].append(t2[1])
     edges['triplet', 'touches', 'triplet'] = trip_trip_hom
@@ -377,7 +377,7 @@ def hetero_rel_edges(hgraph, cell_vector = True):
     trip_motifs_het = [[],[]]
     for triplet in triplets:
         for motif in motifs:
-            if contains(motif, triplet):
+            if contains(motif[2], triplet[2]):
                 trip_motifs_het[0].append(triplet[1])
                 trip_motifs_het[1].append(motif[1])
     edges['triplet', 'in', 'motif'] = trip_motifs_het
@@ -386,7 +386,7 @@ def hetero_rel_edges(hgraph, cell_vector = True):
     for m1 in motifs:
         for m2 in motifs:
             if m1!=m2:
-                if touches(m1, m2):
+                if touches(m1[2], m2[2]):
                     mot_mot_hom[0].append(m1[1])
                     mot_mot_hom[1].append(m2[1])
     edges['motif','touches','motif'] = mot_mot_hom
