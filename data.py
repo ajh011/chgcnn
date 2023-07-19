@@ -489,7 +489,7 @@ class InMemoryCrystalHypergraphDataset(Dataset):
 
         with open(osp.join(csv_dir, 'ids.csv')) as id_file:
             ids_csv = csv.reader(id_file)
-            ids = [row[0] for 
+            ids = [mp_id[0] for mp_id in ids_csv]
             self.ids = ids
     
     def __len__(self):
