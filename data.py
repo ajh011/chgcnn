@@ -505,7 +505,7 @@ class InMemoryCrystalHypergraphDataset(Dataset):
         return data
     
 
-def process_data(idx, ids_dir):
+def process_data(idx):
     with open(f'dataset/ids.csv','a') as ids:
         try:
             d = dataset[idx]
