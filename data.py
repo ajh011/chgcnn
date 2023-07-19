@@ -503,12 +503,15 @@ class InMemoryCrystalHypergraphDataset(Dataset):
         return relgraph
     
 
-def process_data(idx):
-    try:
-        d = dataset[idx]
-        torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
-    except:
-        print(f'Cannot process index {idx}')
+def process_data(idx, ids_dir):
+    with open(f'dataset/ids.csv','a') as ids:
+        try:
+            d = dataset[idx]
+            torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
+            ids.write(d['mp_id'])
+
+        except:
+            print(f'Cannot process index {idx}')
 
 
 def run_process(N=None, processes=10):
@@ -523,4 +526,6 @@ def run_process(N=None, processes=10):
 
 if __name__ == '__main__':
     dataset = CrystalHypergraphDataset('cif')
+    with open(f'dataset/ids.csv','w') as ids:
+        print('Clearing id list in dataset/ids.csv')
     run_process()
