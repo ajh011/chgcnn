@@ -477,6 +477,31 @@ class CrystalHypergraphDataset(Dataset):
             'mp_id' : mp_id
             }
     
+class MemoryCrystalHypergraphDataset(Dataset):
+    def __init__(self, data_dir, csv_dir = ''):
+        super().init()
+
+        if csv_dir == '':
+            csv_dir = data_dir
+
+        self.csv_dir = csv_dir
+        self.data_dir = data_dir
+
+        with open(osp.join(csv_dir, 'id_prop.csv')) as id_prop:
+            id_prop = csv.reader(id_prop)
+            self.ids = [row[0] for row in id_prop]
+
+    
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, index):
+        mp_id = self.ids[index]
+        file_dir = osp.join(data_dir, mp_id + '.pt')
+        relgraph = torch.load(file_dir)['relgraph']
+
+        return relgraph
+    
 
 def process_data(idx):
     try:
