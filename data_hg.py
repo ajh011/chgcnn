@@ -520,13 +520,14 @@ class CrystalHypergraphDataset(Dataset):
             start = time.time()
         struc = CifParser(crystal_path).get_structures()[0]
         hgraph = hgraph_gen(struc, cell=False, dir=self.cif_dir)
-        relgraph = pyg_heterodata(hgraph, undirected = True)
-        relgraph.y = torch.tensor(float(target), dtype = torch.float)
+        node_attrs = struc2nodeattrs(struc, import_feat=True)
+        hgraph = gen_pyghypergraph(hgraph,node_attrs)
+        hgraph.y = torch.tensor(float(target), dtype = torch.float)
         if report == True:
             duration = time.time()-start
             print(f'Processed {mp_id} in {round(duration,5)} sec')
         return {
-            'relgraph': relgraph,
+            'hgraph': hgraph,
             'mp_id' : mp_id
             }
     
@@ -550,7 +551,7 @@ class InMemoryCrystalHypergraphDataset(Dataset):
 
     def __getitem__(self, index):
         mp_id = self.ids[index]
-        file_dir = osp.join(self.data_dir, mp_id + '.pt')
+        file_dir = osp.join(self.data_dir, mp_id + '_hg.pt')
         data = torch.load(file_dir)
  
 
@@ -561,7 +562,7 @@ def process_data(idx):
     with open(f'dataset/ids.csv','a') as ids:
         try:
             d = dataset[idx]
-            torch.save(d['relgraph'], 'dataset/{}.pt'.format(d['mp_id']))
+            torch.save(d['relgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
             ids.write(d['mp_id']+'\n')
 
         except:
