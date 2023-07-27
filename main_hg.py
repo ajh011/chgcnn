@@ -6,8 +6,8 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from data import InMemoryCrystalHypergraphDataset
-from model import HeteroRelConv 
+from data_hg import InMemoryCrystalHypergraphDataset
+from model_hg import HeteroRelConv 
 import torch_geometric.transforms as T
 
 try:
@@ -80,7 +80,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         data_time.update(time.time() - end)
         data = data.to(device, non_blocking=True)
-        output = model(data.x_dict, data.edge_index_dict, data.batch_dict['atom'])
+        output = model(data.x, data.hyperedge_index, data.hyperedge_attr, data.batch)
         if task == 'regression':
             target = data.y.view((-1,1))
         else:
@@ -120,7 +120,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
         for i, data in enumerate(test_loader):
 
             data = data.to(device, non_blocking=True)
-            output = model(data.x_dict, data.edge_index_dict, data.batch_dict['atom'])
+            output = model(data.x, data.hyperedge_index, data.hyperedge_attr, data.batch)
             if task == 'regression':
                 target = data.y.view((-1,1))
             else:

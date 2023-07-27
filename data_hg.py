@@ -88,7 +88,7 @@ def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
     return nbr_list, reformat_nbr_lst
 
 #generate initial x encoding (atom number and atom_init)
-def struc2nodeattrs(struc, import_feat: bool = False):
+def struc2nodeattrs(struc, import_feat: bool = False, directory: str = "cif"):
     node_attrs = []
     for site in struc.sites:
         for el in site.species:
@@ -96,7 +96,7 @@ def struc2nodeattrs(struc, import_feat: bool = False):
     if import_feat == True:
         with open(osp.join(directory,'atom_init.json')) as atom_init:
             atom_vecs = json.load(atom_init)
-            node_attrs = [torch.tensor(atom_vecs[f'{z}']).float() for z in node_attrs]
+            node_attrs = [atom_vecs[f'{z}'] for z in node_attrs]
 
     return node_attrs
 
@@ -303,11 +303,11 @@ def hgraph2hgraph(hgraph_package):
     he_index = [[],[]]
     he_attrs=[]
     running_index = 0
-    for hedge in hgraph:
+    for hedge in hgraph_package:
         he_attrs.append(hedge[3])
         for hedge_neighbor in hedge[2]:
-            he_index[0].append(running_index)
-            he_index[1].append(hedge_neighbor)
+            he_index[1].append(running_index)
+            he_index[0].append(hedge_neighbor)
         running_index += 1
     return he_index, he_attrs
     
@@ -317,180 +317,13 @@ def gen_pyghypergraph(hgraph, node_attrs):
 
     he_index, he_attrs = hgraph2hgraph(hgraph)
     
-    graph.x = torch.tensor(node_attrs)
-    graph.hyperedge_index = torch.tensor(he_index)
-    graph.hyperedge_attr = torch.tensor(he_attrs)
-    
-    return graph
+    #num_hedges = he_index[1][-1]
 
-## Helper functions for relatives heterograph construction
+    graph.x = torch.tensor(node_attrs).float()
+    graph.hyperedge_index = torch.tensor(he_index).long()
+    graph.hyperedge_attr = torch.tensor(he_attrs).float()
+    #graph.num_edges = num_hedges
 
-def ordertype(hgraph, string):
-    order_hedge = []
-    for hedge in hgraph:
-        if hedge[0] == string:
-            order_hedge.append(hedge)
-    return order_hedge    
-
-def decompose(hgraph, order_types=['atom','bond','triplet','motif']):
-    sep = []
-    for string in order_types:
-        sep.append(ordertype(hgraph, string))
-    return sep
-    
-def contains(big, small):
-    if all(item in big for item in small):
-        return True
-    else:
-        return False
-    
-def touches(one, two):
-    if any(item in one for item in two):
-        return True
-    else:
-        return False
-
-    
-##Define function that generates relatives heterograph edge indices
-def hetero_rel_edges(hgraph, cell_vector = True):
-    atoms, bonds, triplets, motifs = decompose(hgraph)
-    edges = {}
-    atom_atom_hom = [[],[]]
-    for bond in bonds:
-        atom_atom_hom[0].append(bond[2][0])
-        atom_atom_hom[1].append(bond[2][1])
-    edges['atom','bonds','atom'] = atom_atom_hom
-
-    atom_bonds_het = [[],[]]
-    for atom in atoms:
-        for bond in bonds:
-            if contains(bond[2],atom[2]):
-                atom_bonds_het[0].append(atom[1])
-                atom_bonds_het[1].append(bond[1])
-    edges['atom','in','bond'] = atom_bonds_het
-
-    atom_trip_het = [[],[]]
-    for atom in atoms:
-        for triplet in triplets:
-            if contains(triplet[2],atom[2]):
-                atom_trip_het[0].append(atom[1])
-                atom_trip_het[1].append(triplet[1])
-    edges['atom','in','triplet'] = atom_trip_het
-
-    atom_motifs_het = [[],[]]
-    for atom in atoms:
-        for motif in motifs:
-            if contains(motif[2],atom[2]):
-                atom_motifs_het[0].append(atom[1])
-                atom_motifs_het[1].append(motif[1])
-    edges['atom','in','motif'] = atom_motifs_het
-
-    bond_bond_hom = [[],[]]
-    for bond1 in bonds:
-        for bond2 in bonds:
-            if bond1!=bond2:
-                if touches(bond1[2], bond2[2]):
-                    bond_bond_hom[0].append(bond1[1])
-                    bond_bond_hom[1].append(bond2[1])
-
-    edges['bond','touches','bond'] = bond_bond_hom
-
-    bond_trip_het = [[],[]]
-    for bond in bonds:
-        for triplet in triplets:
-            if contains(triplet[2],bond[2]):
-                bond_trip_het[0].append(bond[1])
-                bond_trip_het[1].append(triplet[1])
-    edges['bond','in','triplet'] = bond_trip_het
-
-    bond_motifs_het = [[],[]]
-    for bond in bonds:
-        for motif in motifs:
-            if contains(motif[2],bond[2]):
-                bond_motifs_het[0].append(bond[1])
-                bond_motifs_het[1].append(motif[1])
-    edges['bond','in','motif'] = bond_motifs_het
-
-
-    trip_trip_hom = [[],[]]
-    for t1 in triplets:
-        for t2 in triplets:
-            if t1!= t2:
-                if touches(t1[2], t2[2]):
-                    trip_trip_hom[0].append(t1[1])
-                    trip_trip_hom[1].append(t2[1])
-    edges['triplet', 'touches', 'triplet'] = trip_trip_hom
-
-    trip_motifs_het = [[],[]]
-    for triplet in triplets:
-        for motif in motifs:
-            if contains(motif[2], triplet[2]):
-                trip_motifs_het[0].append(triplet[1])
-                trip_motifs_het[1].append(motif[1])
-    edges['triplet', 'in', 'motif'] = trip_motifs_het
-
-    mot_mot_hom = [[],[]]
-    for m1 in motifs:
-        for m2 in motifs:
-            if m1!=m2:
-                if touches(m1[2], m2[2]):
-                    mot_mot_hom[0].append(m1[1])
-                    mot_mot_hom[1].append(m2[1])
-    edges['motif','touches','motif'] = mot_mot_hom
-
-    if cell_vector == True:
-        orders = ['motif', 'atom', 'bond']
-        for string, order in zip(orders, decompose(hgraph, orders)):
-            edge_idx = [[],[]]
-            for ent in order:
-                edge_idx[0].append(0)
-                edge_idx[1].append(ent[1])
-            edges['cell', 'contains', string] = edge_idx
-    
-    return edges
-
-
-##Retry with
-
-
-
-
-##Form pytorch geometric HeteroData (heterograph) from hgraph
-def pyg_heterodata(hgraph, undirected = True):
-    graph = HeteroData()
-    atoms, bonds, triplets, motifs = decompose(hgraph)
-    rel_edges = hetero_rel_edges(hgraph)
-
-    graph['atom'].x = torch.stack([torch.tensor(atom[3],dtype = torch.float) for atom in atoms],dim=0)
-    graph['bond'].x = torch.tensor(np.array([bond[3] for bond in bonds]),dtype = torch.float)
-    graph['triplet'].x = torch.tensor(np.array([triplet[3] for triplet in triplets]),dtype = torch.float)
-    graph['motif'].x =torch.tensor(np.array([motif[3] for motif in motifs]),dtype = torch.float)
-    #graph['cell'].x = torch.rand([1,64], dtype = torch.float)
-    
-    graph['atom', 'bonds', 'atom'].edge_index = torch.tensor(rel_edges['atom', 'bonds', 'atom']).long()
-    graph['atom', 'in', 'bond'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'bond']).long()
-    graph['atom', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'triplet']).long()
-    graph['atom', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['atom', 'in', 'motif']).long()
-    graph['bond', 'touches', 'bond'].edge_index =  torch.tensor(rel_edges['bond', 'touches', 'bond']).long()
-    graph['bond', 'in', 'triplet'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'triplet']).long()
-    graph['bond', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['bond', 'in', 'motif']).long()
-    graph['triplet', 'touches', 'triplet'].edge_index =  torch.tensor(rel_edges['triplet', 'touches', 'triplet']).long() 
-    graph['triplet', 'in', 'motif'].edge_index =  torch.tensor(rel_edges['triplet', 'in', 'motif']).long()
-    graph['motif', 'touches', 'motif'].edge_index =  torch.tensor(rel_edges['motif', 'touches', 'motif']).long()
-
-    #orders = ['motif', 'atom', 'bond']
-    #for string in orders:
-    #    graph['cell', 'contains', string].edge_index = torch.tensor(rel_edges['cell', 'contains', string]).long()
-    #    if undirected == True:
-            ####FORM UNDIRECTED EDGES FROM UNMATCHED PAIRS####
-    #        graph[string, 'in', 'cell'].edge_index = torch.stack([torch.tensor(rel_edges['cell','contains',string][i]) for i in [1,0]], dim=0).long()
-    if undirected == True:
-        graph['motif','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','motif'][i]) for i in [1,0]], dim=0).long()
-        graph['motif','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','motif'][i]) for i in [1,0]], dim=0).long()
-        graph['motif','contains','triplet'].edge_index =torch.stack([torch.tensor(rel_edges['triplet','in','motif'][i]) for i in [1,0]], dim=0).long()
-        graph['triplet','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','triplet'][i]) for i in [1,0]], dim=0).long()
-        graph['triplet','contains','bond'].edge_index =torch.stack([torch.tensor(rel_edges['bond','in','triplet'][i]) for i in [1,0]], dim=0).long()
-        graph['bond','contains','atom'].edge_index =torch.stack([torch.tensor(rel_edges['atom','in','bond'][i]) for i in [1,0]], dim=0).long()
     return graph
 
 
@@ -562,7 +395,7 @@ def process_data(idx):
     with open(f'dataset/ids.csv','a') as ids:
         try:
             d = dataset[idx]
-            torch.save(d['relgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
+            torch.save(d['hgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
             ids.write(d['mp_id']+'\n')
 
         except:
