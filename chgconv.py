@@ -45,7 +45,11 @@ class CHGConv(MessagePassing):
             z_c = self.bn_c(z_c)
             message_holder.append(z_f.sigmoid() * F.softplus(z_c))
 
+<<<<<<< HEAD
         out = self.node_agg(message_holder, index=hedge_index[0])
+=======
+        out = self.hedge_agg(message_holder, index=hedge_index[0])
+>>>>>>> 2cf4e5e2ccfab7232c488341cb185494723a3d60
             
         #out = self.propagate(hedge_index, x=x, hedge_attr=hedge_attr, hedge_index_xs=hedge_index_xs)
         out = self.bn_o(out)
@@ -59,10 +63,18 @@ class CHGConv(MessagePassing):
 
 #        z_f = self.lin_f(z)
 #        z_f = self.bn_f(z_f)
+<<<<<<< HEAD
 
 #        z_c = self.lin_c(z)
 #        z_c = self.bn_c(z_c)
 
 #        return z_f.sigmoid() * F.softplus(z_c)
 
+=======
+
+#        z_c = self.lin_c(z)
+#        z_c = self.bn_c(z_c)
+
+#        return z_f.sigmoid() * F.softplus(z_c)
+>>>>>>> 2cf4e5e2ccfab7232c488341cb185494723a3d60
 
