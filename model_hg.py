@@ -38,26 +38,37 @@ class CHGConv(MessagePassing):
             self.node_agg = aggr.MeanAggregation()
 
 
-    def forward(self, x, hedge_index, hedge_attr):
+    def forward(self, x, hedge_index, node_hedge_adj, hedge_attr):
         time1 = time.perf_counter()
         '''
-        x:            torch tensor (of type float) of node attributes
+        x:              torch tensor (of type float) of node attributes
 
-                      [[node1_feat],[node2_feat],...]
-                      dim([num_nodes,node_fea_dim])
+                        [[node1_feat],[node2_feat],...]
+                        dim([num_nodes,node_fea_dim])
 
-        hedge_index:  torch tensor (of type long) of
-                      hyperedge indices (as in HypergraphConv)
+        hedge_index:    torch tensor (of type long) of
+                        hyperedge indices (as in HypergraphConv)
 
-                      [[node_indxs,...],[hyperedge_indxs,...]]
-                      dim([2,num nodes in all hedges])
+                        [[node_indxs,...],[hyperedge_indxs,...]]
+                        dim([2,num nodes in all hedges])
 
-        hedge attr:   torch tensor (of type float) of
-                      hyperedge attributes (with first index algining with 
-                      hedges overall hyperedge_indx in hedge_index)
+        hedge attr:     torch tensor (of type float) of
+                        hyperedge attributes (with first index algining with 
+                        hedges overall hyperedge_indx in hedge_index)
+  
+                        [[hedge1_feat], [hedge2_feat],...]
+                        dim([num_hedges,hyperedge_feat_dim])
 
-                      [[hedge1_feat], [hedge2_feat],...]
-                      dim([num_hedges,hyperedge_feat_dim])
+        node_hedge_adj: torch tensor (of type sparse) of node_hedge adjacency 
+                        (a redundant hedge_index) that greatly speeds up message 
+                        forming. Each row represents the nodes contained in 
+                        a hedge (nonzero if in hedge, zero if not), and is normalized 
+                        to one so that multiplication by this matrix represents 
+                        averaging over all node attributes contained in each hedge
+
+                        [[node1_in_hedge1, node2_in_hedge1,...],[node1_in_hedge2,...],...]
+                        dim([num_hedges, num_nodes])
+        )
         '''
         '''
         The goal is to generalize the CGConv gated convolution structure to hyperedges. The 
@@ -70,27 +81,20 @@ class CHGConv(MessagePassing):
         within each hedge. These node attributes are then aggregated according to the 
         hyperedge indices.
         '''
-        xs = []
-        for i in hedge_index[0]:
-            xs.append(x[i])
+        hedge_index_xs = torch.mm(node_hedge_adj, x)
         time2 = time.perf_counter()
         print(f'hedge_xs comp time: {time2-time1}')
-        hedge_index_xs = torch.stack(xs, dim = 0)
         hedge_index_xs = self.hedge_agg(hedge_index_xs, hedge_index[1], dim = 0)
 
         '''
         To finish forming the message, I loop through all x_indxs listed in the hedge_index and 
         concatenate the origin node feature with the hedge feature and the corresponding aggregate neighborhood
-        feature. This is currently very SLOW!!! accounts for probably 80%-90% of compute time.
+        feature.
         '''
 
         time3 = time.perf_counter()
         print(f'hedge_x agg time: {time3-time2}')
-        message_holder = []
-        for x_index, h_index in zip(hedge_index[0],hedge_index[1]):
-            z = torch.cat([x[x_index], hedge_attr[h_index], hedge_index_xs[h_index]], dim =-1)
-            message_holder.append(z)
-
+        message_holder = torch.cat(hedge_index_xs, hedge_attr, dim = 1)
         '''
         We then can aggregate the messages and add to node features after some activation 
         functions and linear layers.
@@ -98,7 +102,6 @@ class CHGConv(MessagePassing):
 
         time4 = time.perf_counter()
         print(f'message cat time: {time4-time3}')
-        message_holder = torch.stack(message_holder, dim = 0)
         z = self.node_agg(message_holder, hedge_index[0], dim = 0)
         
         time5 = time.perf_counter()

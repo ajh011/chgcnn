@@ -80,7 +80,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         data_time.update(time.time() - end)
         data = data.to(device, non_blocking=True)
-        output = model(data.x, data.hyperedge_index, data.hyperedge_attr, data.batch)
+        output = model(data.x, data.hyperedge_index, data.node_hedge_adj, data.hyperedge_attr, data.batch)
         if task == 'regression':
             target = data.y.view((-1,1))
         else:
@@ -120,7 +120,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
         for i, data in enumerate(test_loader):
 
             data = data.to(device, non_blocking=True)
-            output = model(data.x, data.hyperedge_index, data.hyperedge_attr, data.batch)
+            output = model(data.x, data.hyperedge_index, data.node_hedge_adj, data.hyperedge_attr, data.batch)
             if task == 'regression':
                 target = data.y.view((-1,1))
             else:
