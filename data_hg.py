@@ -310,19 +310,36 @@ def hgraph2hgraph(hgraph_package):
             he_index[0].append(hedge_neighbor)
         running_index += 1
     return he_index, he_attrs
+
+## Returns hedge/node adjaceney matrix for BONDS ONLY ATM!!!!!
+def node_hedge_pack(hedges, num_nodes=12, orders=['bond']):
+    hedge_packer = []
+    for i in hedges:
+        nodes = i[2]
+        weight = torch.tensor(1/len(nodes))
+        weights = weight.repeat(len(nodes))
+        nodes = torch.tensor(nodes)
+        hots = torch.sparse.FloatTensor(nodes.unsqueeze(0), weights, (num_nodes,))
+        hedge_packer.append(hots)
+
+    hots = torch.stack(hedge_packer, dim =0)
+    
+    return hots
+    
     
 ## Defining pyg hypergraph gen
 def gen_pyghypergraph(hgraph, node_attrs):
     graph = Data()
 
     he_index, he_attrs = hgraph2hgraph(hgraph)
-    
-    #num_hedges = he_index[1][-1]
+    node_hedge_adj = node_hedge_pack(hgraph)
 
     graph.x = torch.tensor(node_attrs).float()
     graph.hyperedge_index = torch.tensor(he_index).long()
     graph.hyperedge_attr = torch.tensor(he_attrs).float()
-    #graph.num_edges = num_hedges
+    graph.node_hedge_adj = node_hedge_adj
+    graph.num_hedges = torch.max(he_index[1])
+    graph.num_nodes = torch.tensor(node_attrs).shape[0]
 
     return graph
 
@@ -338,7 +355,7 @@ class CrystalHypergraphDataset(Dataset):
 
         self.cif_dir = cif_dir
 
-        with open(f'{cif_dir}/id_prop.csv') as id_prop:
+        with open(f'{cif_dir}/id_band_form_hull.csv') as id_prop:
             id_prop = csv.reader(id_prop)
             self.id_prop_data = [row for row in id_prop]
 
@@ -346,7 +363,7 @@ class CrystalHypergraphDataset(Dataset):
         return len(self.id_prop_data)
     
     def __getitem__(self, index, report = True):
-        mp_id, target = self.id_prop_data[index]
+        mp_id, band, form_en, en_hull = self.id_prop_data[index]
         crystal_path = osp.join(self.cif_dir, mp_id)
         crystal_path = crystal_path + '.cif'
         if report == True:
@@ -355,7 +372,7 @@ class CrystalHypergraphDataset(Dataset):
         hgraph = hgraph_gen(struc, cell=False, dir=self.cif_dir)
         node_attrs = struc2nodeattrs(struc, import_feat=True)
         hgraph = gen_pyghypergraph(hgraph,node_attrs)
-        hgraph.y = torch.tensor(float(target), dtype = torch.float)
+        hgraph.y = torch.tensor(float(form_en), dtype = torch.float)
         if report == True:
             duration = time.time()-start
             print(f'Processed {mp_id} in {round(duration,5)} sec')
