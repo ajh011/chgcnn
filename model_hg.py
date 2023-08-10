@@ -17,25 +17,19 @@ from torch_geometric.nn import aggr
 
 
 class CHGConv(MessagePassing):
-    def __init__(self, node_fea_dim=92, hedge_fea_dim=35, out_dim=92, hedge_agg_method = 'mean', node_agg_method = 'mean', batch_norm = False):
+    def __init__(self, node_fea_dim=92, hedge_fea_dim=35, out_dim=92, batch_norm = False):
         super().__init__()
         self.batch_norm = batch_norm
         self.node_fea_dim = node_fea_dim
         self.hedge_fea_dim = hedge_fea_dim
 
-        self.lin_f = Linear(2*node_fea_dim+hedge_fea_dim, out_dim)
-        self.lin_c = Linear(2*node_fea_dim+hedge_fea_dim, out_dim)
+        self.lin_f = Linear(node_fea_dim+hedge_fea_dim, out_dim)
+        self.lin_c = Linear(node_fea_dim+hedge_fea_dim, out_dim)
 
         if batch_norm == True:
             self.bn_f = BatchNorm1d(out_dim)
             self.bn_c = BatchNorm1d(out_dim)
             self.bn_o = BatchNorm1d(out_dim)
-
-        if hedge_agg_method == 'mean':
-            self.hedge_agg = aggr.MeanAggregation()
-
-        if node_agg_method == 'mean':
-            self.node_agg = aggr.MeanAggregation()
 
 
     def forward(self, x, hedge_index, node_hedge_adj, hedge_attr):
@@ -82,9 +76,8 @@ class CHGConv(MessagePassing):
         hyperedge indices.
         '''
         hedge_index_xs = torch.mm(node_hedge_adj, x)
-        time2 = time.perf_counter()
-        print(f'hedge_xs comp time: {time2-time1}')
-        hedge_index_xs = self.hedge_agg(hedge_index_xs, hedge_index[1], dim = 0)
+#        time2 = time.perf_counter()
+#        print(f'hedge_xs comp time: {time2-time1}')
 
         '''
         To finish forming the message, I loop through all x_indxs listed in the hedge_index and 
@@ -92,33 +85,38 @@ class CHGConv(MessagePassing):
         feature.
         '''
 
-        time3 = time.perf_counter()
-        print(f'hedge_x agg time: {time3-time2}')
-        message_holder = torch.cat(hedge_index_xs, hedge_attr, dim = 1)
+#        time3 = time.perf_counter()
+#        print(f'hedge_x agg time: {time3-time2}')
+        message_holder = torch.cat([hedge_index_xs, hedge_attr], dim = 1)
         '''
         We then can aggregate the messages and add to node features after some activation 
         functions and linear layers.
         '''
 
-        time4 = time.perf_counter()
-        print(f'message cat time: {time4-time3}')
-        z = self.node_agg(message_holder, hedge_index[0], dim = 0)
+#        time4 = time.perf_counter()
+#        print(f'message cat time: {time4-time3}')
+#        z = torch.mm(node_hedge_adj.swapaxes(0,1),message_holder)
         
-        time5 = time.perf_counter()
-        print(f'message agg time: {time5-time4}')
-        z_f = self.lin_f(z)
-        z_c = self.lin_c(z)
+#        time5 = time.perf_counter()
+#        print(f'message agg time: {time5-time4}')
+#        print(f'mess hold: {message_holder}')
+        z_f = self.lin_f(message_holder)
+        z_c = self.lin_c(message_holder)
         if self.batch_norm == True:
             z_f = self.bn_f(z_f)
             z_c = self.bn_c(z_c)
         out = z_f.sigmoid() * F.softplus(z_c)
+#        print(f'out: {out}')
+        out = torch.mm(node_hedge_adj.swapaxes(0,1), out)
+#        print(f'out2: {out}')
         if self.batch_norm == True:
             out = self.bn_o(out)
         out = F.softplus(out + x)
+#        out3 = print(f'out3: {out}')
 
-        time6 = time.perf_counter()
-        print(f'gate time: {time6-time5}')
-        print(f'(total) out time: {time6-time1}')
+#        time6 = time.perf_counter()
+#        print(f'gate time: {time6-time5}')
+#        print(f'(total) out time: {time6-time1}')
         return out
 
 
@@ -132,17 +130,21 @@ class CrystalHypergraphConv(torch.nn.Module):
         for i in range(n_layers):
             conv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
             self.convs.append(conv)
-        self.proj = nn.Linear(h_dim,hout_dim)
+        self.l1 = nn.Linear(h_dim, h_dim)
+        self.l2 = nn.Linear(h_dim,hout_dim)
         self.activation = torch.nn.Softplus()
         self.out = nn.Linear(hout_dim,1)
  
-    def forward(self, x, hyperedge_index, hyperedge_attr, batch):
+    def forward(self, x, hyperedge_index, hedge_node_adj, hyperedge_attr, batch):
         x = self.embed(x)
         for conv in self.convs:
-            x = conv(x, hyperedge_index, hyperedge_attr)
-        
+            x = conv(x, hyperedge_index, hedge_node_adj, hyperedge_attr)
+#        x = self.l1(x) 
+#        x = self.activation(x)
+        norms = torch.linalg.vector_norm(x, dim = 0)
+        x = torch.mul(x, 1/norms)
         x = scatter(x, batch, dim=0, reduce='mean')
-        x = self.proj(x)
+        x = self.l2(x)
         x = self.activation(x)
         output = self.out(x)
         return output
