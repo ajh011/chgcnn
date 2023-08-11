@@ -71,18 +71,16 @@ class CHGConv(MessagePassing):
         each hedge to complete the message, and then concatenate that with the hyperedge feature 
         to form the message.
 
-        Below, I build a list of the node attributes of all contained 
-        within each hedge. These node attributes are then aggregated according to the 
-        hyperedge indices.
+        Below, I multiply the node_hedge_adj matrix by the x matrix, effectively aggregating all 
+        attributes of contained nodes in each hyperedge
         '''
         hedge_index_xs = torch.mm(node_hedge_adj, x)
 #        time2 = time.perf_counter()
 #        print(f'hedge_xs comp time: {time2-time1}')
 
         '''
-        To finish forming the message, I loop through all x_indxs listed in the hedge_index and 
-        concatenate the origin node feature with the hedge feature and the corresponding aggregate neighborhood
-        feature.
+        To finish forming the message, I concatenate these aggregated neighborhoods with their 
+        corresponding hedge features.
         '''
 
 #        time3 = time.perf_counter()
