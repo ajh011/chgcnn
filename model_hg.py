@@ -17,7 +17,7 @@ from torch_geometric.nn import aggr
 
 
 class CHGConv(MessagePassing):
-    def __init__(self, node_fea_dim=92, hedge_fea_dim=35, out_dim=92, batch_norm = False):
+    def __init__(self, node_fea_dim=92, hedge_fea_dim=35, out_dim=92, batch_norm = True):
         super().__init__()
         self.batch_norm = batch_norm
         self.node_fea_dim = node_fea_dim
@@ -139,8 +139,6 @@ class CrystalHypergraphConv(torch.nn.Module):
             x = conv(x, hyperedge_index, hedge_node_adj, hyperedge_attr)
 #        x = self.l1(x) 
 #        x = self.activation(x)
-        norms = torch.linalg.vector_norm(x, dim = 0)
-        x = torch.mul(x, 1/norms)
         x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l2(x)
         x = self.activation(x)

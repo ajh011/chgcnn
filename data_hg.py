@@ -22,7 +22,7 @@ from pymatgen.analysis.local_env import \
     MinimumVIRENN
 
 import torch
-from torch_geometric.data import HeteroData, Data
+from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch.utils.data import Dataset
 

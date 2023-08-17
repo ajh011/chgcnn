@@ -10,12 +10,7 @@ from data_hg import InMemoryCrystalHypergraphDataset
 from model_hg import CrystalHypergraphConv
 import torch_geometric.transforms as T
 
-try:
-    import cPickle as pickle
-except ModuleNotFoundError:
-    import pickle
-
-
+from torch_geometric.utils import is_sparse
 
 
 class AverageMeter:
@@ -205,6 +200,12 @@ def main():
     print(f'Finding data in {args.dir}...')
     dataset = InMemoryCrystalHypergraphDataset(args.dir)
 
+    data0 = dataset[0]
+
+    print(data0)
+    print(data0.__cat_dim__('node_hedge_adj', data0.node_hedge_adj))
+    print(is_sparse(data0.node_hedge_adj))
+    print('adj' in 'node_hedge_adj')
     print('Initializing model...') 
     model = CrystalHypergraphConv().to(device)
     ######################################################################################
