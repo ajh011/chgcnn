@@ -10,11 +10,11 @@ import torch
 from torch import Tensor
 from torch.nn import BatchNorm1d, Linear
 
-from torch_geometric.nn.conv import MessagePassing
+from torch_geometric.nn.conv import MessagePassing, TransformerConv
 from torch_geometric.typing import Adj, OptTensor, PairTensor
 
 
-class CGAGGConv(MessagePassing):
+class CGConv(MessagePassing):
     r"""The crystal graph convolutional operator from the
     `"Crystal Graph Convolutional Neural Networks for an
     Accurate and Interpretable Prediction of Material Properties"
@@ -56,7 +56,7 @@ class CGAGGConv(MessagePassing):
         - **output:** node features :math:`(|\mathcal{V}|, F)` or
           :math:`(|\mathcal{V_t}|, F_{t})` if bipartite
     """
-    def __init__(self, channels: Union[int, Tuple[int, int]], dim: int = 35,
+    def __init__(self, channels: Union[int, Tuple[int, int]], dim: int = 40,
                  aggr: str = 'add', batch_norm: bool = True,
                  bias: bool = True, **kwargs):
         super().__init__(aggr=aggr, **kwargs)
@@ -67,8 +67,8 @@ class CGAGGConv(MessagePassing):
         if isinstance(channels, int):
             channels = (channels, channels)
 
-        self.lin_f = Linear(int(sum(channels)/2 + dim), channels[1], bias=bias)
-        self.lin_s = Linear(int(sum(channels)/2 + dim), channels[1], bias=bias)
+        self.lin_f = Linear(sum(channels) + dim, channels[1], bias=bias)
+        self.lin_s = Linear(sum(channels) + dim, channels[1], bias=bias)
         if batch_norm:
             self.bn = BatchNorm1d(channels[1])
         else:
@@ -99,9 +99,9 @@ class CGAGGConv(MessagePassing):
 
     def message(self, x_i, x_j, edge_attr: OptTensor) -> Tensor:
         if edge_attr is None:
-            z = 0.5*(x_i + x_j)
+            z = torch.cat([x_i, x_j], dim=-1)
         else:
-            z = torch.cat([0.5*(x_i+x_j), edge_attr], dim=-1)
+            z = torch.cat([x_i, x_j, edge_attr], dim=-1)
         return self.lin_f(z).sigmoid() * F.softplus(self.lin_s(z))
 
     def __repr__(self) -> str:
@@ -110,7 +110,7 @@ class CGAGGConv(MessagePassing):
 
 class CrystalGraphConv(nn.Module):
 
-    def __init__(self, atom_fea_dim=92, edge_dim=35, node_dim=64, num_layers=3, h_dim=128, classification=False, num_class=2):
+    def __init__(self, atom_fea_dim=92, edge_dim=40, node_dim=64, num_layers=3, h_dim=128, classification=False, num_class=2):
         super().__init__()
 
         self.atom_fea_dim = atom_fea_dim
@@ -122,7 +122,8 @@ class CrystalGraphConv(nn.Module):
         self.embedding = nn.Linear(atom_fea_dim, node_dim)
         self.l1 = nn.Linear(node_dim, node_dim)
 
-        conv_layer = CGAGGConv(node_dim, edge_dim, batch_norm=True)
+        conv_layer = CGConv(node_dim, node_dim, edge_dim=edge_dim)
+
         self.layers = nn.ModuleList([copy.deepcopy(conv_layer) for _ in range(num_layers)])
 
         if not self.classification:
@@ -141,7 +142,6 @@ class CrystalGraphConv(nn.Module):
         for layer in self.layers:
             x = layer(x, data.edge_index, data.edge_attr)
 
-        x = self.l1(x)
         x = scatter(x, data.batch, dim=0, reduce='mean')
 
         if not self.classification:

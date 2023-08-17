@@ -37,7 +37,7 @@ import math
 
 
 #generate custom neighbor list to be used by all struc2's with nearest neighbor determination technique as parameter
-def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
+def get_nbrlist(struc, nn_strategy = 'voro', max_nn=12):
     NN = {
         # these methods consider too many neighbors which may lead to unphysical resutls
         'voro': VoronoiNN(tol=0.2),
@@ -117,7 +117,7 @@ class gaussian_expansion(object):
         expansion = [i if i > tolerance else 0 for i in expansion]
         return expansion
     
-def struc2pairs(struc, nbr_lst, radius = 4.5, gauss_dim: int = 35):
+def struc2pairs(struc, nbr_lst, radius = 8, gauss_dim: int = 40):
 
     edge_index = [[],[]]
     edge_attrs = []
@@ -214,7 +214,7 @@ class InMemoryCrystalGraphDataset(Dataset):
 
     def __getitem__(self, index):
         mp_id = self.ids[index]
-        file_dir = osp.join(self.data_dir, mp_id + '.pt')
+        file_dir = osp.join(self.data_dir, mp_id + '_cg.pt')
         data = torch.load(file_dir)
  
 
@@ -225,7 +225,7 @@ def process_data(idx):
     with open(f'dataset/ids_cg.csv','a') as ids:
         try:
             d = dataset[idx]
-            torch.save(d['graph'], 'dataset/{}.pt'.format(d['mp_id']))
+            torch.save(d['graph'], 'dataset/{}_cg.pt'.format(d['mp_id']))
             ids.write(d['mp_id']+'\n')
 
         except:
