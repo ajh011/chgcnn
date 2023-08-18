@@ -23,17 +23,27 @@ class CHGConv(MessagePassing):
         self.node_fea_dim = node_fea_dim
         self.hedge_fea_dim = hedge_fea_dim
 
-        self.lin_f = Linear(node_fea_dim+hedge_fea_dim, out_dim)
-        self.lin_c = Linear(node_fea_dim+hedge_fea_dim, out_dim)
+        self.lin_f1 = Linear(node_fea_dim+hedge_fea_dim, hedge_fea_dim)
+        self.lin_c1 = Linear(node_fea_dim+hedge_fea_dim, hedge_fea_dim)
+        self.lin_f2 = Linear(node_fea_dim+hedge_fea_dim, out_dim)
+        self.lin_c2 = Linear(node_fea_dim+hedge_fea_dim, out_dim)
+
+        self.aggr = aggr.MeanAggregation()
 
         if batch_norm == True:
-            self.bn_f = BatchNorm1d(out_dim)
-            self.bn_c = BatchNorm1d(out_dim)
+            self.bn_f = BatchNorm1d(hedge_fea_dim)
+            self.bn_c = BatchNorm1d(hedge_fea_dim)
+
             self.bn_o = BatchNorm1d(out_dim)
 
-
-    def forward(self, x, hedge_index, node_hedge_adj, hedge_attr):
-        time1 = time.perf_counter()
+    def forward(self, data):
+        x = data.x
+        hyperedge_index = data.hyperedge_index
+        node_hedge_adj = data.node_hedge_adj
+        hedge_attr = data.hyperedge_attr
+        num_nodes = data.num_nodes
+        #add one for bad indexing
+        num_hedges = data.num_hedges + 1
         '''
         x:              torch tensor (of type float) of node attributes
 
@@ -64,6 +74,7 @@ class CHGConv(MessagePassing):
                         dim([num_hedges, num_nodes])
         )
         '''
+
         '''
         The goal is to generalize the CGConv gated convolution structure to hyperedges. The 
         primary problem with such a generalization is the variable number of nodes contained 
@@ -74,48 +85,41 @@ class CHGConv(MessagePassing):
         Below, I multiply the node_hedge_adj matrix by the x matrix, effectively aggregating all 
         attributes of contained nodes in each hyperedge
         '''
+
         hedge_index_xs = torch.mm(node_hedge_adj, x)
-#        time2 = time.perf_counter()
-#        print(f'hedge_xs comp time: {time2-time1}')
 
         '''
         To finish forming the message, I concatenate these aggregated neighborhoods with their 
         corresponding hedge features.
         '''
 
-#        time3 = time.perf_counter()
-#        print(f'hedge_x agg time: {time3-time2}')
         message_holder = torch.cat([hedge_index_xs, hedge_attr], dim = 1)
+
         '''
         We then can aggregate the messages and add to node features after some activation 
         functions and linear layers.
         '''
-
-#        time4 = time.perf_counter()
-#        print(f'message cat time: {time4-time3}')
-#        z = torch.mm(node_hedge_adj.swapaxes(0,1),message_holder)
-        
-#        time5 = time.perf_counter()
-#        print(f'message agg time: {time5-time4}')
-#        print(f'mess hold: {message_holder}')
-        z_f = self.lin_f(message_holder)
-        z_c = self.lin_c(message_holder)
+        z_f = self.lin_f1(message_holder)
+        z_c = self.lin_c1(message_holder)
         if self.batch_norm == True:
             z_f = self.bn_f(z_f)
             z_c = self.bn_c(z_c)
-        out = z_f.sigmoid() * F.softplus(z_c)
-#        print(f'out: {out}')
-        out = torch.mm(node_hedge_adj.swapaxes(0,1), out)
-#        print(f'out2: {out}')
+        hyperedge_attrs = z_f.sigmoid() * F.softplus(z_c)
+        x_i = x[hyperedge_index[0]]  # Target node features
+        x_j = hyperedge_attrs[hyperedge_index[1]]  # Source node features
+        z = torch.cat([x_i,x_j], dim=-1)  # Form reverse messages (for origin node messages)
+        out = self.lin_f2(z).sigmoid()*F.softplus(self.lin_c2(z)) # Apply CGConv like structure
+        out = self.aggr(out, hyperedge_index[0]) #aggregate according to node
+ 
+        #out = self.propagate(hyperedge_index, x=x, size=(num_hedges, num_nodes), flow='source_to_target') # Propagate hyperedge attributes to node features
+        #out = self.propagate(hyperedge_index.flip([0]), x=out, size=(num_hedges, num_nodes))
         if self.batch_norm == True:
             out = self.bn_o(out)
         out = F.softplus(out + x)
-#        out3 = print(f'out3: {out}')
+        data.x = out
+        data.hyperedge_attr = hyperedge_attrs
 
-#        time6 = time.perf_counter()
-#        print(f'gate time: {time6-time5}')
-#        print(f'(total) out time: {time6-time1}')
-        return out
+        return data
 
 
 
@@ -133,13 +137,14 @@ class CrystalHypergraphConv(torch.nn.Module):
         self.activation = torch.nn.Softplus()
         self.out = nn.Linear(hout_dim,1)
  
-    def forward(self, x, hyperedge_index, hedge_node_adj, hyperedge_attr, batch):
-        x = self.embed(x)
+    def forward(self, data):
+
+        data.x = self.embed(data.x)
         for conv in self.convs:
-            x = conv(x, hyperedge_index, hedge_node_adj, hyperedge_attr)
+            data = conv(data)
 #        x = self.l1(x) 
 #        x = self.activation(x)
-        x = scatter(x, batch, dim=0, reduce='mean')
+        x = scatter(data.x, data.batch, dim=0, reduce='mean')
         x = self.l2(x)
         x = self.activation(x)
         output = self.out(x)
