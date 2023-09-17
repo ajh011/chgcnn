@@ -39,11 +39,7 @@ class CHGConv(MessagePassing):
     def forward(self, data):
         x = data.x
         hyperedge_index = data.hyperedge_index
-        node_hedge_adj = data.node_hedge_adj
         hedge_attr = data.hyperedge_attr
-        num_nodes = data.num_nodes
-        #add one for bad indexing
-        num_hedges = data.num_hedges + 1
         '''
         x:              torch tensor (of type float) of node attributes
 
@@ -86,7 +82,8 @@ class CHGConv(MessagePassing):
         attributes of contained nodes in each hyperedge
         '''
 
-        hedge_index_xs = torch.mm(node_hedge_adj, x)
+        hedge_index_xs = x[hyperedge_index[0]]
+        hedge_index_xs = self.aggr(hedge_index_xs, hyperedge_index[1])
 
         '''
         To finish forming the message, I concatenate these aggregated neighborhoods with their 
@@ -94,7 +91,6 @@ class CHGConv(MessagePassing):
         '''
 
         message_holder = torch.cat([hedge_index_xs, hedge_attr], dim = 1)
-
         '''
         We then can aggregate the messages and add to node features after some activation 
         functions and linear layers.

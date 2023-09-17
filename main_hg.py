@@ -201,7 +201,7 @@ def main():
     dataset = InMemoryCrystalHypergraphDataset(args.dir)
 
     data0 = dataset[0]
-
+        
     print('Initializing model...') 
     model = CrystalHypergraphConv().to(device)
     ######################################################################################

@@ -110,7 +110,7 @@ class CGConv(MessagePassing):
 
 class CrystalGraphConv(nn.Module):
 
-    def __init__(self, atom_fea_dim=92, edge_dim=40, node_dim=64, num_layers=3, h_dim=128, classification=False, num_class=2):
+    def __init__(self, atom_fea_dim=92, edge_dim=35, node_dim=64, num_layers=3, h_dim=128, classification=False, num_class=2):
         super().__init__()
 
         self.atom_fea_dim = atom_fea_dim
@@ -122,7 +122,7 @@ class CrystalGraphConv(nn.Module):
         self.embedding = nn.Linear(atom_fea_dim, node_dim)
         self.l1 = nn.Linear(node_dim, node_dim)
 
-        conv_layer = CGConv(node_dim, node_dim, edge_dim=edge_dim)
+        conv_layer = CGConv((node_dim, node_dim), dim=edge_dim)
 
         self.layers = nn.ModuleList([copy.deepcopy(conv_layer) for _ in range(num_layers)])
 
