@@ -36,10 +36,7 @@ class CHGConv(MessagePassing):
 
             self.bn_o = BatchNorm1d(out_dim)
 
-    def forward(self, data):
-        x = data.x
-        hyperedge_index = data.hyperedge_index
-        hedge_attr = data.hyperedge_attr
+    def forward(self, x, hyperedge_index, hedge_attr):
         '''
         x:              torch tensor (of type float) of node attributes
 
@@ -59,16 +56,6 @@ class CHGConv(MessagePassing):
                         [[hedge1_feat], [hedge2_feat],...]
                         dim([num_hedges,hyperedge_feat_dim])
 
-        node_hedge_adj: torch tensor (of type sparse) of node_hedge adjacency 
-                        (a redundant hedge_index) that greatly speeds up message 
-                        forming. Each row represents the nodes contained in 
-                        a hedge (nonzero if in hedge, zero if not), and is normalized 
-                        to one so that multiplication by this matrix represents 
-                        averaging over all node attributes contained in each hedge
-
-                        [[node1_in_hedge1, node2_in_hedge1,...],[node1_in_hedge2,...],...]
-                        dim([num_hedges, num_nodes])
-        )
         '''
 
         '''
@@ -78,8 +65,9 @@ class CHGConv(MessagePassing):
         each hedge to complete the message, and then concatenate that with the hyperedge feature 
         to form the message.
 
-        Below, I multiply the node_hedge_adj matrix by the x matrix, effectively aggregating all 
-        attributes of contained nodes in each hyperedge
+        Below, the node attributes are first placed in order with their hyperedge_indices
+        and then aggregated according to their hyperedges to form a component of the message corresponding to 
+        each hyperedge
         '''
 
         hedge_index_xs = x[hyperedge_index[0]]
@@ -112,10 +100,8 @@ class CHGConv(MessagePassing):
         if self.batch_norm == True:
             out = self.bn_o(out)
         out = F.softplus(out + x)
-        data.x = out
-        data.hyperedge_attr = hyperedge_attrs
 
-        return data
+        return out
 
 
 
@@ -124,23 +110,31 @@ class CrystalHypergraphConv(torch.nn.Module):
         super().__init__()
 
         self.embed = nn.Linear(92, h_dim)
-        self.convs = torch.nn.ModuleList() 
+        self.bconvs = torch.nn.ModuleList() 
+        self.mconvs = torch.nn.ModuleList() 
         for i in range(n_layers):
-            conv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
-            self.convs.append(conv)
+            bconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
+            mconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
+            self.bconvs.append(bconv)
+            self.mconvs.append(mconv)
         self.l1 = nn.Linear(h_dim, h_dim)
         self.l2 = nn.Linear(h_dim,hout_dim)
         self.activation = torch.nn.Softplus()
         self.out = nn.Linear(hout_dim,1)
  
     def forward(self, data):
-
-        data.x = self.embed(data.x)
-        for conv in self.convs:
-            data = conv(data)
-#        x = self.l1(x) 
-#        x = self.activation(x)
-        x = scatter(data.x, data.batch, dim=0, reduce='mean')
+        batch = data.batch
+        x = data.x
+        motif_hyperedge_index = data.motif_hyperedge_index
+        bond_hyperedge_index = data.bond_hyperedge_index
+        motif_hyperedge_attr = data.motif_hyperedge_attr
+        bond_hyperedge_attr = data.bond_hyperedge_attr
+        x = self.embed(x)
+        for bconv,mconv in zip(self.bconvs,self.mconvs):
+            x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr)
+            #x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr)
+            x = x.relu()
+        x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l2(x)
         x = self.activation(x)
         output = self.out(x)
