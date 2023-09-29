@@ -10,10 +10,7 @@ from data_cg import InMemoryCrystalGraphDataset
 from model_cg import CrystalGraphConv
 import torch_geometric.transforms as T
 
-try:
-    import cPickle as pickle
-except ModuleNotFoundError:
-    import pickle
+from random import sample
 
 
 
@@ -62,7 +59,7 @@ class ProgressMeter:
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task):
+def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task, normalizer):
     batch_time = AverageMeter('Batch', ':.4f')
     data_time = AverageMeter('Data', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
@@ -82,13 +79,14 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
         data = data.to(device, non_blocking=True)
         output = model(data)
         if task == 'regression':
+            target_norm = normalizer.norm(data.y).view((-1,1))
             target = data.y.view((-1,1))
         else:
-            target = data.y.long()
-        loss = loss_criterion(output, target)
-        accu = accuracy_criterion(output, target)
+            target_norm = normalizer.norm(data.y).long()
+        loss = loss_criterion(output, target_norm)
+        accu = accuracy_criterion(normalizer.denorm(output), target)
 
-        losses.update(loss.item(), target.size(0))
+        losses.update(loss.item(), target_norm.size(0))
         accus.update(accu.item(), target.size(0))
 
         optimizer.zero_grad()
@@ -104,7 +102,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
     return losses.avg, accus.avg
 
 
-def validate(model, device, test_loader, loss_criterion, accuracy_criterion, task):
+def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epoch, task, normalizer):
     batch_time = AverageMeter('Batch', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
     accus = AverageMeter('Accu', ':.4f')
@@ -122,14 +120,14 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
             data = data.to(device, non_blocking=True)
             output = model(data)
             if task == 'regression':
+                target_norm = normalizer.norm(data.y).view((-1,1))
                 target = data.y.view((-1,1))
             else:
-                target = data.y.long()
+                target_norm = normalizer.norm(data.y).long()
+            loss = loss_criterion(output, target_norm)
+            accu = accuracy_criterion(normalizer.denorm(output), target)
 
-            loss = loss_criterion(output,target)
-            accu = accuracy_criterion(output,target)
-
-            losses.update(loss.item(), target.size(0))
+            losses.update(loss.item(), target_norm.size(0))
             accus.update(accu.item(), target.size(0))
 
             batch_time.update(time.time() - end)
@@ -137,7 +135,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, tas
 
             if i % 10 == 0:
                 progress.display(i)
-            wandb.log({'val-mse': losses.val, 'val-mse-avg': losses.avg, 'val-mae': accus.val, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.val}) 
+            wandb.log({'val-mse': losses.val, 'val-mse-avg': losses.avg, 'val-mae': accus.val, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.val, 'epoch': epoch}) 
     return accus.avg
 
 
@@ -151,8 +149,8 @@ def main():
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train (default: 200)')
-    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
-                        help='learning rate (default: 1e-3)')
+    parser.add_argument('--lr', type=float, default=1e-2, metavar='LR',
+                        help='learning rate (default: 1e-2)')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
     parser.add_argument('--weight-decay', default=0, type=float,
@@ -176,11 +174,12 @@ def main():
     parser.add_argument('--drop-last', default=False, type=bool)
     parser.add_argument('--pin-memory', default=False, type=bool)
     parser.add_argument('--dir', default='dataset', type=str)
+    parser.add_argument('--normalize', default=True, type=bool)
 
     args = parser.parse_args()
 
     best_accu = 1e6
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
 
 
@@ -200,15 +199,15 @@ def main():
         }
     )
 
-
-    ######################################################################################
+    #### Initialize dataset
     print(f'Finding data in {args.dir}...')
     dataset = InMemoryCrystalGraphDataset(args.dir)
 
+    #### Initialize model
     print('Initializing model...') 
     model = CrystalGraphConv().to(device)
-    ######################################################################################
-
+    
+    #### Divide data into train and test sets
     n_data = len(dataset)
     train_split = int(n_data * args.train_ratio)
     dataset_train, dataset_val = random_split(
@@ -217,6 +216,7 @@ def main():
         generator=torch.Generator().manual_seed(args.seed)
     )
 
+    #### Load data into DataLoaders/Batches
     train_loader = DataLoader(
         dataset_train,
         batch_size=args.batch_size,
@@ -236,8 +236,18 @@ def main():
         pin_memory=args.pin_memory
     )
 
-    ###########################################################################################
+    #### Set normalizer (for targets)
+    if args.normalize == True:
+        if len(dataset) < 1000:
+            sample_targets = [dataset[i].y for i in range(len(dataset))]
+        else:
+            sample_targets = [dataset[i].y for i in sample(range(len(dataset)), 1000)]
+        print(sample_targets)
+        normalizer = Normalizer(sample_targets)
+        print('normalizer initialized!')
 
+
+    #### Set optimizer
     if args.optim == 'SGD':
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         print(f'SGD chosen as optimizer with lr {args.lr}, mom {args.momentum}, wd {args.weight_decay}')
@@ -248,6 +258,8 @@ def main():
     else:
         raise ValueError('Optimizer must be SGD or Adam.')
 
+
+    #### Set cost and loss functions 
     if args.task == 'regression':
         loss_criterion = torch.nn.MSELoss()
         accuracy_criterion = torch.nn.L1Loss()
@@ -262,6 +274,7 @@ def main():
         accuracy_criterion = torch.nn.CrossEntropyLoss()
         print('Using cross entropy for training loss and accuracy')
 
+    #### Resume mechanism
     if args.resume:
         print("=> loading checkpoint")
         checkpoint = torch.load('checkpoint.pth.tar')
@@ -271,10 +284,11 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer'])
         print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
 
+    #### Loop through train and test for set number of epochs
     for epoch in range(args.start_epoch, args.epochs + 1):
         train_loss, train_accu = train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer,
-                                       epoch, args.task)
-        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, args.task)
+                                       epoch, args.task, normalizer)
+        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, epoch, args.task, normalizer)
         # scheduler.step()
 
         is_best = train_accu < best_accu
@@ -293,6 +307,30 @@ def main():
     ckpt = torch.load('model_best.pth.tar')
     print(ckpt['best_accu'])
     wandb.finish()
+
+#### Define normalizer for target data (from CGCNN source code)
+class Normalizer(object):
+    """Normalize a Tensor and restore it later. """
+
+    def __init__(self, tensor_list):
+        """tensor is taken as a sample to calculate the mean and std"""
+        self.mean = torch.mean(torch.stack(tensor_list,dim=0))
+        self.std = torch.std(torch.stack(tensor_list,dim=0))
+
+    def norm(self, tensor):
+        return (tensor - self.mean) / self.std
+
+    def denorm(self, normed_tensor):
+        return normed_tensor * self.std + self.mean
+
+    def state_dict(self):
+        return {'mean': self.mean,
+                'std': self.std}
+
+    def load_state_dict(self, state_dict):
+        self.mean = state_dict['mean']
+        self.std = state_dict['std']
+
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)

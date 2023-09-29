@@ -123,7 +123,7 @@ def _collate(
 
     elem = values[0]
 
-    if key == "hyperedge_index":
+    if "hyperedge_index" in key:
         hedge_incs = [torch.tensor([torch.max(value[0])+1,torch.max(value[1])+1]) for value in values]
         hedge_incs.insert(0,torch.tensor([0,0]))
         hedge_incs = [sum(hedge_incs[:idx+1]) if idx > 0 else  hedge_incs[0]  for idx in range(len(hedge_incs))]
