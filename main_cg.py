@@ -6,13 +6,11 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from data_hg import InMemoryCrystalHypergraphDataset
-from model_hg import CrystalHypergraphConv
+from data_cg import InMemoryCrystalGraphDataset
+from model_cg import CrystalGraphConv
 import torch_geometric.transforms as T
 
 from random import sample
-
-
 
 
 class AverageMeter:
@@ -135,7 +133,7 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epo
 
             if i % 10 == 0:
                 progress.display(i)
-    wandb.log({'val-mse-avg': losses.avg, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.avg, 'epoch': epoch}) 
+    wandb.log({'val-mse-avg': losses.avg, 'val-mae-avg': accus.avg, 'batch-time': batch_time.avg, 'epoch': epoch}) 
     return accus.avg
 
 
@@ -199,16 +197,13 @@ def main():
         }
     )
 
-    #### Create dataset
+    #### Initialize dataset
     print(f'Finding data in {args.dir}...')
-    dataset = InMemoryCrystalHypergraphDataset(args.dir)
+    dataset = InMemoryCrystalGraphDataset(args.dir)
 
-    data0 = dataset[0]
-        
-    #### Initiliaze model 
+    #### Initialize model
     print('Initializing model...') 
-    model = CrystalHypergraphConv().to(device)
-
+    model = CrystalGraphConv().to(device)
     
     #### Divide data into train and test sets
     n_data = len(dataset)
