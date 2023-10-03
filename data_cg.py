@@ -170,7 +170,7 @@ class CrystalGraphDataset(Dataset):
 
         self.cif_dir = cif_dir
 
-        with open(f'{cif_dir}/id_prop_band_form_hull.csv') as id_prop:
+        with open(f'{cif_dir}/id_prop.csv') as id_prop:
             id_prop = csv.reader(id_prop)
             self.id_prop_data = [row for row in id_prop]
 
@@ -178,7 +178,7 @@ class CrystalGraphDataset(Dataset):
         return len(self.id_prop_data)
     
     def __getitem__(self, index, report = True):
-        mp_id, band, form_en, en_hull = self.id_prop_data[index]
+        mp_id, form_en = self.id_prop_data[index]
         crystal_path = osp.join(self.cif_dir, mp_id)
         crystal_path = crystal_path + '.cif'
         if report == True:
@@ -243,7 +243,7 @@ def run_process(N=None, processes=10):
 
 
 if __name__ == '__main__':
-    dataset = CrystalGraphDataset('/mnt/data/ajh')
+    dataset = CrystalGraphDataset('../chgcnn_old/cif')
     with open(f'dataset/ids_cg.csv','w') as ids:
         print('Clearing id list in dataset/ids_cg.csv')
     run_process()
