@@ -452,7 +452,7 @@ class CrystalHypergraphDataset(Dataset):
 
         self.cif_dir = cif_dir
 
-        with open(f'{cif_dir}/id_prop.csv') as id_prop:
+        with open(f'{cif_dir}/id_prop_band_form_hull.csv') as id_prop:
             id_prop = csv.reader(id_prop)
             self.id_prop_data = [row for row in id_prop]
 
@@ -460,7 +460,7 @@ class CrystalHypergraphDataset(Dataset):
         return len(self.id_prop_data)
     
     def __getitem__(self, index, report = True):
-        mp_id, target = self.id_prop_data[index]
+        mp_id, band_gap, form_en, en_abv_hull = self.id_prop_data[index]
         crystal_path = osp.join(self.cif_dir, mp_id)
         crystal_path = crystal_path + '.cif'
         if report == True:
@@ -468,7 +468,9 @@ class CrystalHypergraphDataset(Dataset):
         struc = CifParser(crystal_path).get_structures()[0]
         hgraph = hgraph_gen(struc, cell=False, dir=self.cif_dir)
         relgraph = pyg_heterodata(hgraph, undirected = True)
-        relgraph.y = torch.tensor(float(target), dtype = torch.float)
+        relgraph.form_en = torch.tensor(float(form_en), dtype = torch.float)
+        relgraph.en_abv_hull = torch.tensor(float(en_abv_hull), dtype = torch.float)
+        relgraph.band_gap= torch.tensor(float(band_gap), dtype = torch.float)
         if report == True:
             duration = time.time()-start
             print(f'Processed {mp_id} in {round(duration,5)} sec')
@@ -526,7 +528,7 @@ def run_process(N=None, processes=10):
 
 
 if __name__ == '__main__':
-    dataset = CrystalHypergraphDataset('cif')
+    dataset = CrystalHypergraphDataset('/mnt/data/ajh')
     with open(f'dataset/ids.csv','w') as ids:
         print('Clearing id list in dataset/ids.csv')
     run_process()
