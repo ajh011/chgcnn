@@ -111,12 +111,15 @@ class CrystalHypergraphConv(torch.nn.Module):
 
         self.embed = nn.Linear(92, h_dim)
         self.bconvs = torch.nn.ModuleList() 
+        self.tconvs = torch.nn.ModuleList() 
         self.mconvs = torch.nn.ModuleList() 
         for i in range(n_layers):
             bconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
             mconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
+            tconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim)
             self.bconvs.append(bconv)
             self.mconvs.append(mconv)
+            self.tconvs.append(tconv)
         self.l1 = nn.Linear(h_dim, h_dim)
         self.l2 = nn.Linear(h_dim,hout_dim)
         self.activation = torch.nn.Softplus()
@@ -126,12 +129,15 @@ class CrystalHypergraphConv(torch.nn.Module):
         batch = data.batch
         x = data.x
         motif_hyperedge_index = data.motif_hyperedge_index
+        triplet_hyperedge_index = data.triplet_hyperedge_index
         bond_hyperedge_index = data.bond_hyperedge_index
         motif_hyperedge_attr = data.motif_hyperedge_attr
+        triplet_hyperedge_attr = data.triplet_hyperedge_attr
         bond_hyperedge_attr = data.bond_hyperedge_attr
         x = self.embed(x)
         for bconv,mconv in zip(self.bconvs,self.mconvs):
             x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr)
+            x = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr)
             #x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr)
             x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
