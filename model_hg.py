@@ -136,9 +136,9 @@ class CrystalHypergraphConv(torch.nn.Module):
         bond_hyperedge_attr = data.bond_hyperedge_attr
         x = self.embed(x)
         for bconv,mconv in zip(self.bconvs,self.mconvs):
-            x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr)
-            x = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr)
-            #x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr)
+            x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr)
+            #x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr)
+            #x = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr)
             x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l2(x)

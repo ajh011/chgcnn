@@ -59,7 +59,7 @@ class ProgressMeter:
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task, normalizer):
+def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task, target_name, normalizer):
     batch_time = AverageMeter('Batch', ':.4f')
     data_time = AverageMeter('Data', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
@@ -79,10 +79,10 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
         data = data.to(device, non_blocking=True)
         output = model(data)
         if task == 'regression':
-            target_norm = normalizer.norm(data.y).view((-1,1))
-            target = data.y.view((-1,1))
+            target_norm = normalizer.norm(data[target_name]).view((-1,1))
+            target = data[target_name].view((-1,1))
         else:
-            target_norm = normalizer.norm(data.y).long()
+            target_norm = normalizer.norm(data[target_name]).long()
         loss = loss_criterion(output, target_norm)
         accu = accuracy_criterion(normalizer.denorm(output), target)
 
@@ -102,7 +102,7 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
     return losses.avg, accus.avg
 
 
-def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epoch, task, normalizer):
+def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epoch, task, target_name, normalizer):
     batch_time = AverageMeter('Batch', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
     accus = AverageMeter('Accu', ':.4f')
@@ -120,10 +120,10 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epo
             data = data.to(device, non_blocking=True)
             output = model(data)
             if task == 'regression':
-                target_norm = normalizer.norm(data.y).view((-1,1))
-                target = data.y.view((-1,1))
+                target_norm = normalizer.norm(data[target_name]).view((-1,1))
+                target = data[target_name].view((-1,1))
             else:
-                target_norm = normalizer.norm(data.y).long()
+                target_norm = normalizer.norm(data[target_name]).long()
             loss = loss_criterion(output, target_norm)
             accu = accuracy_criterion(normalizer.denorm(output), target)
 
@@ -175,6 +175,7 @@ def main():
     parser.add_argument('--pin-memory', default=False, type=bool)
     parser.add_argument('--dir', default='dataset', type=str)
     parser.add_argument('--normalize', default=True, type=bool)
+    parser.add_argument('--target', default = 'form_en', type=str, help='formation energy (form_en), band gap (band_gap) or energy above hull (en_abv_hull) prediction task') 
 
     args = parser.parse_args()
 
@@ -239,12 +240,22 @@ def main():
         pin_memory=args.pin_memory
     )
 
+    #### Set target as y
+    if args.target == 'form_en':
+        print(f'Setting target as formation energy (eV/atom)')
+    elif args.target == 'band_gap':
+        print(f'Setting target as band gap (eV)')
+    elif args.target == 'en_abv_hull':
+        print(f'Setting target as energy above hull (eV)')
+    else:
+        print(f'Target {args.target} not found!')
+
     #### Set normalizer (for targets)
     if args.normalize == True:
         if len(dataset) < 1000:
-            sample_targets = [dataset[i].y for i in range(len(dataset))]
+            sample_targets = [dataset[i][args.target] for i in range(len(dataset))]
         else:
-            sample_targets = [dataset[i].y for i in sample(range(len(dataset)), 1000)]
+            sample_targets = [dataset[i][args.target] for i in sample(range(len(dataset)), 1000)]
         normalizer = Normalizer(sample_targets)
         print('normalizer initialized!')
 
@@ -289,8 +300,8 @@ def main():
     #### Loop through train and test for set number of epochs
     for epoch in range(args.start_epoch, args.epochs + 1):
         train_loss, train_accu = train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer,
-                                       epoch, args.task, normalizer)
-        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, epoch, args.task, normalizer)
+                                       epoch, args.task, args.target, normalizer)
+        val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, epoch, args.task, args.target, normalizer)
         # scheduler.step()
 
         is_best = train_accu < best_accu
