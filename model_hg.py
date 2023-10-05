@@ -36,7 +36,7 @@ class CHGConv(MessagePassing):
 
             self.bn_o = BatchNorm1d(out_dim)
 
-    def forward(self, x, hyperedge_index, hedge_attr):
+    def forward(self, x, hyperedge_index, hedge_attr, num_nodes):
         '''
         x:              torch tensor (of type float) of node attributes
 
@@ -93,12 +93,13 @@ class CHGConv(MessagePassing):
         x_j = hyperedge_attrs[hyperedge_index[1]]  # Source node features
         z = torch.cat([x_i,x_j], dim=-1)  # Form reverse messages (for origin node messages)
         out = self.lin_f2(z).sigmoid()*F.softplus(self.lin_c2(z)) # Apply CGConv like structure
-        out = self.aggr(out, hyperedge_index[0]) #aggregate according to node
+        out = self.aggr(out, hyperedge_index[0], dim_size = num_nodes) #aggregate according to node
  
         #out = self.propagate(hyperedge_index, x=x, size=(num_hedges, num_nodes), flow='source_to_target') # Propagate hyperedge attributes to node features
         #out = self.propagate(hyperedge_index.flip([0]), x=out, size=(num_hedges, num_nodes))
         if self.batch_norm == True:
             out = self.bn_o(out)
+
         out = F.softplus(out + x)
 
         return out
@@ -126,6 +127,7 @@ class CrystalHypergraphConv(torch.nn.Module):
         self.out = nn.Linear(hout_dim,1)
  
     def forward(self, data):
+        num_nodes = data.num_nodes
         batch = data.batch
         x = data.x
         motif_hyperedge_index = data.motif_hyperedge_index
@@ -135,10 +137,10 @@ class CrystalHypergraphConv(torch.nn.Module):
         triplet_hyperedge_attr = data.triplet_hyperedge_attr
         bond_hyperedge_attr = data.bond_hyperedge_attr
         x = self.embed(x)
-        for bconv,mconv in zip(self.bconvs,self.mconvs):
-            x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr)
-            #x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr)
-            #x = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr)
+        for bconv,mconv,tconv in zip(self.bconvs,self.mconvs,self.tconvs):
+            x = bconv(x, bond_hyperedge_index, bond_hyperedge_attr, num_nodes)
+            x = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr, num_nodes)
+            x = mconv(x, motif_hyperedge_index, motif_hyperedge_attr, num_nodes)
             x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l2(x)

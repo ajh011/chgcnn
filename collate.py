@@ -122,9 +122,14 @@ def _collate(
 ) -> Tuple[Any, Any, Any]:
 
     elem = values[0]
+    num_nodes_list = [data.num_nodes for data in data_list]
+
 
     if "hyperedge_index" in key:
-        hedge_incs = [torch.tensor([torch.max(value[0])+1 if value.numel() != 0 else 0,torch.max(value[1])+1 if value.numel() != 0 else 0]) for value in values]
+        hedge_incs = []
+        for num_nodes, hedge_indexes in zip(num_nodes_list, values):
+            num_hedges = torch.max(hedge_indexes[1])+1 if hedge_indexes.numel() != 0 else 0
+            hedge_incs.append(torch.tensor([num_nodes,num_hedges])) 
         hedge_incs.insert(0,torch.tensor([0,0]))
         hedge_incs = [sum(hedge_incs[:idx+1]) if idx > 0 else  hedge_incs[0]  for idx in range(len(hedge_incs))]
         hedge_index_batch = [torch.stack([value[0] + inc[0],value[1]+inc[1]],dim = 0) for value, inc in zip(values, hedge_incs)] 
