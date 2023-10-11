@@ -29,7 +29,7 @@ class CHGConv(MessagePassing):
         self.lin_c2 = Linear(2*node_fea_dim+hedge_fea_dim, out_dim)
 
         self.hedge_aggr = aggr.SoftmaxAggregation(learn = True)
-        self.node_aggr = aggr.MeanAggregation()
+        self.node_aggr = aggr.SoftmaxAggregation(learn = True)
 
         if batch_norm == True:
             self.bn_f = BatchNorm1d(node_fea_dim)
@@ -85,6 +85,7 @@ class CHGConv(MessagePassing):
         functions and linear layers.
         '''
         hyperedge_attrs = self.lin_c1(message_holder)
+        hyperedge_attrs = F.softplus(hedge_attr + hyperedge_attrs)
         message_holder = self.lin_f1(message_holder)
         x_i = x[hyperedge_index[0]]  # Target node features
         x_j = message_holder[hyperedge_index[1]]  # Source node features
