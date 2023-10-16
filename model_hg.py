@@ -4,6 +4,7 @@ import numpy as np
 from torch_scatter import scatter
 from torch_geometric.nn.conv import HeteroConv, SAGEConv, TransformerConv, CGConv, HypergraphConv
 import torch_geometric.nn as nn
+import torch
 from torch_geometric.nn import to_hetero
 
 import time
@@ -25,8 +26,13 @@ class CHGConv(MessagePassing):
 
         self.lin_f1 = Linear(node_fea_dim+hedge_fea_dim, hedge_fea_dim+node_fea_dim)
         self.lin_c1 = Linear(node_fea_dim+hedge_fea_dim, hedge_fea_dim)
-        self.lin_f2 = Linear(2*node_fea_dim+hedge_fea_dim, out_dim)
-        self.lin_c2 = Linear(2*node_fea_dim+hedge_fea_dim, out_dim)
+        self.lin_f2 = Linear(2*node_fea_dim+hedge_fea_dim, 2*out_dim)
+
+        self.softplus_hedge = torch.nn.Softplus()
+        self.sigmoid_filter = torch.nn.Sigmoid()
+        self.softplus_core = torch.nn.Softplus()
+        self.softplus_out = torch.nn.Softplus()
+
 
         self.hedge_aggr = aggr.SoftmaxAggregation(learn = True)
         self.node_aggr = aggr.SoftmaxAggregation(learn = True)
@@ -85,17 +91,17 @@ class CHGConv(MessagePassing):
         functions and linear layers.
         '''
         hyperedge_attrs = self.lin_c1(message_holder)
-        hyperedge_attrs = F.softplus(hedge_attr + hyperedge_attrs)
+        hyperedge_attrs = self.softplus_hedge(hedge_attr + hyperedge_attrs)
         message_holder = self.lin_f1(message_holder)
         x_i = x[hyperedge_index[0]]  # Target node features
         x_j = message_holder[hyperedge_index[1]]  # Source node features
         z = torch.cat([x_i,x_j], dim=-1)  # Form reverse messages (for origin node messages)
-        z_f = self.lin_f2(z)
-        z_c = self.lin_c2(z)
+        z = self.lin_f2(z)
+        z_f, z_c = z.chunk(2, dim = -1)
         if self.batch_norm == True:
             z_f = self.bn_f(z_f)
             z_c = self.bn_c(z_c)
-        out = z_f.sigmoid()*F.softplus(z_c) # Apply CGConv like structure
+        out = self.sigmoid_filter(z_f)*self.softplus_core(z_c) # Apply CGConv like structure
         out = self.node_aggr(out, hyperedge_index[0], dim_size = num_nodes) #aggregate according to node
  
         #out = self.propagate(hyperedge_index, x=x, size=(num_hedges, num_nodes), flow='source_to_target') # Propagate hyperedge attributes to node features
@@ -103,7 +109,7 @@ class CHGConv(MessagePassing):
         if self.batch_norm == True:
             out = self.bn_o(out)
 
-        out = F.softplus(out + x)
+        out = self.softplus_out(out + x)
 
         return out, hyperedge_attrs
 
@@ -137,7 +143,7 @@ class CrystalHypergraphConv(torch.nn.Module):
         batch = data.batch
         x = data.x
         motif_hyperedge_index = data.motif_hyperedge_index
-        triplet_hyperedge_index = data.triplet_hyperedge_index
+        #triplet_hyperedge_index = data.triplet_hyperedge_index
         bond_hyperedge_index = data.bond_hyperedge_index
         motif_hyperedge_attr = self.membed(data.motif_hyperedge_attr)
         #triplet_hyperedge_attr = self.tembed(data.triplet_hyperedge_attr)
@@ -145,6 +151,7 @@ class CrystalHypergraphConv(torch.nn.Module):
         x = self.embed(x)
         for bconv,mconv,tconv in zip(self.bconvs,self.mconvs,self.tconvs):
             x, bond_hyperedge_attr = bconv(x, bond_hyperedge_index, bond_hyperedge_attr, num_nodes)
+            #x, triplet_hyperedge_attr = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr, num_nodes)
             x, motif_hyperedge_attr = mconv(x, motif_hyperedge_index, motif_hyperedge_attr, num_nodes)
             x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
