@@ -284,9 +284,9 @@ def struc2cell(struc, hgraph, random_x = True):
     return hgraph
 
 ## Now bring together process into overall hgraph generation
-def hgraph_gen(struc, cell = False):
+def hgraph_gen(struc, cell = False, nn_strategy = 'voro'):
     hgraph = []
-    nbr_lst,reformat_nbr_lst = get_nbrlist(struc)
+    nbr_lst,reformat_nbr_lst = get_nbrlist(struc, nn_strategy = nn_strategy)
     #hgraph = struc2singletons(struc, hgraph, directory= dir)
     hgraph = struc2pairs(struc, hgraph, nbr_lst)
     #hgraph = struc2triplets(struc, hgraph, reformat_nbr_lst)

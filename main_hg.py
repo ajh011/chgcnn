@@ -6,13 +6,19 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
+from torch.optim.lr_scheduler import MultiStepLR
 from data_hg import InMemoryCrystalHypergraphDataset
 from model_hg import CrystalHypergraphConv
 import torch_geometric.transforms as T
 
+
+
 from random import sample
 
 
+def ClassificationAccuracy(target, prediction):
+    acc = (prediction.round() == target).float().mean()
+    return acc
 
 
 class AverageMeter:
@@ -59,7 +65,7 @@ class ProgressMeter:
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task, target_name, normalizer):
+def train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer, epoch, task, target_name, normalizer, scheduler):
     batch_time = AverageMeter('Batch', ':.4f')
     data_time = AverageMeter('Data', ':.4f')
     losses = AverageMeter('Loss', ':.4f')
@@ -81,10 +87,12 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
         if task == 'regression':
             target_norm = normalizer.norm(data[target_name]).view((-1,1))
             target = data[target_name].view((-1,1))
+            loss = loss_criterion(output, target_norm)
+            accu = accuracy_criterion(normalizer.denorm(output), target)
         else:
-            target_norm = normalizer.norm(data[target_name]).long()
-        loss = loss_criterion(output, target_norm)
-        accu = accuracy_criterion(normalizer.denorm(output), target)
+            target = data[target_name].long()
+            loss = loss_criterion(output, target)
+            accu = accuracy_criterion(normalizer.denorm(output), target)
 
         losses.update(loss.item(), target_norm.size(0))
         accus.update(accu.item(), target.size(0))
@@ -98,7 +106,10 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         if i % 10 == 0:
             progress.display(i)
-    wandb.log({'train-mse-avg': losses.avg, 'train-mae-avg': accus.avg, 'epoch': epoch, 'batch-time': batch_time.avg}) 
+    if task == 'regression':
+        wandb.log({'train-mse-avg': losses.avg, 'train-mae-avg': accus.avg, 'epoch': epoch, 'batch-time': batch_time.avg, 'lr': scheduler.get_last_lr()}) 
+    else:
+        wandb.log({'train-nll-avg': losses.avg, 'train-accuracy-avg': accus.avg, 'epoch': epoch, 'batch-time': batch_time.avg}) 
     return losses.avg, accus.avg
 
 
@@ -122,10 +133,12 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epo
             if task == 'regression':
                 target_norm = normalizer.norm(data[target_name]).view((-1,1))
                 target = data[target_name].view((-1,1))
+                loss = loss_criterion(output, target_norm)
+                accu = accuracy_criterion(normalizer.denorm(output), target)
             else:
-                target_norm = normalizer.norm(data[target_name]).long()
-            loss = loss_criterion(output, target_norm)
-            accu = accuracy_criterion(normalizer.denorm(output), target)
+                target = data[target_name].long()
+                loss = loss_criterion(output, target)
+                accu = accuracy_criterion(normalizer.denorm(output), target)
 
             losses.update(loss.item(), target_norm.size(0))
             accus.update(accu.item(), target.size(0))
@@ -135,7 +148,10 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epo
 
             if i % 10 == 0:
                 progress.display(i)
-    wandb.log({'val-mse-avg': losses.avg, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.avg, 'epoch': epoch}) 
+    if task == 'regression':
+        wandb.log({'val-mse-avg': losses.avg, 'val-mae-avg': accus.avg, 'i': i, 'batch-time': batch_time.avg, 'epoch': epoch}) 
+    else:
+        wandb.log({'val-nll-avg': losses.avg, 'val-accu-avg': accus.avg, 'i': i, 'batch-time': batch_time.avg, 'epoch': epoch}) 
     return accus.avg
 
 
@@ -176,11 +192,13 @@ def main():
     parser.add_argument('--dir', default='dataset', type=str)
     parser.add_argument('--normalize', default=True, type=bool)
     parser.add_argument('--target', default = 'form_en', type=str, help='formation energy (form_en), band gap (band_gap) or energy above hull (en_abv_hull) prediction task') 
+    parser.add_argument('--scheduler', default=True, type=bool,
+            help = 'use scheduler')
 
     args = parser.parse_args()
 
     best_accu = 1e6
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
 
 
@@ -271,6 +289,9 @@ def main():
     else:
         raise ValueError('Optimizer must be SGD or Adam.')
 
+    #### Set up scheduler
+    if args.scheduler == True:
+        scheduler = MultiStepLR(optimizer, milestones = [100,200,250], gamma=0.1, verbose = True)
 
     #### Set cost and loss functions 
     if args.task == 'regression':
@@ -278,10 +299,9 @@ def main():
         accuracy_criterion = torch.nn.L1Loss()
         print('Using MSE accuracy and L1 for training loss')
     elif args.num_class == 2 and args.task != 'regression':
-        print('CLASSIFICATION NOT CURRENTLY SUPPORTED\n\n\n\nIGNORE FOLLOWING')
         loss_criterion = torch.nn.NLLLoss()
-        accuracy_criterion = torch.nn.NLLLoss()
-        print('Using NLL for training loss and accuracy')
+        accuracy_criterion = ClassificationAccuracy()
+        print('Using NLL for training loss and basic accuracy')
     else:
         loss_criterion = torch.nn.CrossEntropyLoss()
         accuracy_criterion = torch.nn.CrossEntropyLoss()
@@ -300,13 +320,13 @@ def main():
     #### Loop through train and test for set number of epochs
     for epoch in range(args.start_epoch, args.epochs + 1):
         train_loss, train_accu = train(model, device, train_loader, loss_criterion, accuracy_criterion, optimizer,
-                                       epoch, args.task, args.target, normalizer)
+                                       epoch, args.task, args.target, normalizer, scheduler)
         val_accu = validate(model, device, val_loader, loss_criterion, accuracy_criterion, epoch, args.task, args.target, normalizer)
-        # scheduler.step()
 
         is_best = train_accu < best_accu
         best_accu = min(train_accu, best_accu)
 
+        scheduler.step()
         save_checkpoint({
             'epoch': epoch,
             'state_dict': model.state_dict(),
