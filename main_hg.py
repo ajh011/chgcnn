@@ -6,7 +6,7 @@ import wandb
 from torch_geometric.nn import to_hetero
 from torch_geometric.loader import DataLoader
 from torch.utils.data.dataset import random_split
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from data_hg import InMemoryCrystalHypergraphDataset
 from model_hg import CrystalHypergraphConv
 import torch_geometric.transforms as T
@@ -198,7 +198,7 @@ def main():
     args = parser.parse_args()
 
     best_accu = 1e6
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
 
 
@@ -291,7 +291,7 @@ def main():
 
     #### Set up scheduler
     if args.scheduler == True:
-        scheduler = MultiStepLR(optimizer, milestones = [100,200,250], gamma=0.1, verbose = True)
+        scheduler = CosineAnnealingLR(optimizer, T_max = 300, verbose = True)
 
     #### Set cost and loss functions 
     if args.task == 'regression':
