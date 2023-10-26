@@ -116,8 +116,10 @@ class CHGConv(MessagePassing):
 
 
 class CrystalHypergraphConv(torch.nn.Module):
-    def __init__(self, h_dim = 64, hedge_dim=80, hout_dim = 128, n_layers = 3):
+    def __init__(self, classification, h_dim = 64, hedge_dim=40, hout_dim = 128, n_layers = 3):
         super().__init__()
+
+        self.classification = classification
 
         self.embed = nn.Linear(92, h_dim)
         self.bembed = nn.Linear(35, hedge_dim)
@@ -136,7 +138,12 @@ class CrystalHypergraphConv(torch.nn.Module):
         self.l1 = nn.Linear(h_dim, h_dim)
         self.l2 = nn.Linear(h_dim,hout_dim)
         self.activation = torch.nn.Softplus()
-        self.out = nn.Linear(hout_dim,1)
+        if self.classification:
+            self.out = nn.Linear(hout_dim, 2)
+            self.sigmoid = torch.nn.Sigmoid()
+            self.dropout = torch.nn.Dropout()
+        else:
+            self.out = nn.Linear(hout_dim,1)
  
     def forward(self, data):
         num_nodes = data.num_nodes
@@ -156,8 +163,12 @@ class CrystalHypergraphConv(torch.nn.Module):
             x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l2(x)
+        if self.classification:
+            x = self.dropout(x)
         x = self.activation(x)
         output = self.out(x)
+        if self.classification:
+            output = self.sigmoid(output)
         return output
 
 

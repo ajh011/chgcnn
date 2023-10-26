@@ -371,7 +371,7 @@ class CrystalHypergraphDataset(Dataset):
 
         self.cif_dir = cif_dir
 
-        with open(f'{cif_dir}/id_prop_band_form_hull.csv') as id_prop:
+        with open(f'{cif_dir}/id_band_form_hull_metalicity.csv') as id_prop:
             id_prop = csv.reader(id_prop)
             self.id_prop_data = [row for row in id_prop]
 
@@ -379,7 +379,7 @@ class CrystalHypergraphDataset(Dataset):
         return len(self.id_prop_data)
     
     def __getitem__(self, index, report = True):
-        mp_id, band_gap, form_en, en_abv_hull = self.id_prop_data[index]
+        mp_id, band_gap, form_en, en_abv_hull, metalicity = self.id_prop_data[index]
         crystal_path = osp.join(self.cif_dir, mp_id)
         crystal_path = crystal_path + '.cif'
         if report == True:
@@ -393,6 +393,7 @@ class CrystalHypergraphDataset(Dataset):
         hgraph.form_en = torch.tensor(float(form_en), dtype = torch.float)
         hgraph.band_gap = torch.tensor(float(band_gap), dtype = torch.float)
         hgraph.en_abv_hull = torch.tensor(float(en_abv_hull), dtype = torch.float)
+        hgraph.metalicity = torch.tensor(int(metalicity), dtype = torch.long)
         if report == True:
             duration = time.time()-start
             print(f'Processed {mp_id} in {round(duration,5)} sec')

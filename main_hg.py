@@ -16,8 +16,9 @@ import torch_geometric.transforms as T
 from random import sample
 
 
-def ClassificationAccuracy(target, prediction):
-    acc = (prediction.round() == target).float().mean()
+def ClassificationAccuracy(output, target):
+    prediction = torch.argmax(output, dim=1)
+    acc = (prediction == target).float().mean()
     return acc
 
 
@@ -89,13 +90,15 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
             target = data[target_name].view((-1,1))
             loss = loss_criterion(output, target_norm)
             accu = accuracy_criterion(normalizer.denorm(output), target)
+            losses.update(loss.item(), target_norm.size(0))
+            accus.update(accu.item(), target.size(0))
         else:
             target = data[target_name].long()
             loss = loss_criterion(output, target)
-            accu = accuracy_criterion(normalizer.denorm(output), target)
+            accu = accuracy_criterion(output, target.float())
+            losses.update(loss.item(), target.size(0))
+            accus.update(accu.item(), target.size(0))
 
-        losses.update(loss.item(), target_norm.size(0))
-        accus.update(accu.item(), target.size(0))
 
         optimizer.zero_grad()
         loss.backward()
@@ -135,13 +138,15 @@ def validate(model, device, test_loader, loss_criterion, accuracy_criterion, epo
                 target = data[target_name].view((-1,1))
                 loss = loss_criterion(output, target_norm)
                 accu = accuracy_criterion(normalizer.denorm(output), target)
+                losses.update(loss.item(), target_norm.size(0))
+                accus.update(accu.item(), target.size(0))
             else:
                 target = data[target_name].long()
                 loss = loss_criterion(output, target)
-                accu = accuracy_criterion(normalizer.denorm(output), target)
+                accu = accuracy_criterion(output, target)
+                losses.update(loss.item(), target.size(0))
+                accus.update(accu.item(), target.size(0))
 
-            losses.update(loss.item(), target_norm.size(0))
-            accus.update(accu.item(), target.size(0))
 
             batch_time.update(time.time() - end)
             end = time.time()
@@ -226,7 +231,11 @@ def main():
         
     #### Initiliaze model 
     print('Initializing model...') 
-    model = CrystalHypergraphConv().to(device)
+    if args.task == 'classification':
+        class_bool = True
+    else:
+        class_bool = False
+    model = CrystalHypergraphConv(classification = class_bool).to(device)
 
     
     #### Divide data into train and test sets
@@ -265,10 +274,16 @@ def main():
         print(f'Setting target as band gap (eV)')
     elif args.target == 'en_abv_hull':
         print(f'Setting target as energy above hull (eV)')
+    elif args.target == 'metalicity':
+        args.task = 'classification'
+        args.num_class = 2
+        args.normalize = False
+        print(f'Setting target as metalicity (metal 1/nm 0)')
     else:
         print(f'Target {args.target} not found!')
 
     #### Set normalizer (for targets)
+    print(args.normalize)
     if args.normalize == True:
         if len(dataset) < 1000:
             sample_targets = [dataset[i][args.target] for i in range(len(dataset))]
@@ -276,6 +291,8 @@ def main():
             sample_targets = [dataset[i][args.target] for i in sample(range(len(dataset)), 1000)]
         normalizer = Normalizer(sample_targets)
         print('normalizer initialized!')
+    else:
+        normalizer = None
 
 
     #### Set optimizer
@@ -299,9 +316,9 @@ def main():
         accuracy_criterion = torch.nn.L1Loss()
         print('Using MSE accuracy and L1 for training loss')
     elif args.num_class == 2 and args.task != 'regression':
-        loss_criterion = torch.nn.NLLLoss()
-        accuracy_criterion = ClassificationAccuracy()
-        print('Using NLL for training loss and basic accuracy')
+        loss_criterion = torch.nn.CrossEntropyLoss()
+        accuracy_criterion = ClassificationAccuracy
+        print('Using cross entropy for training loss and basic accuracy')
     else:
         loss_criterion = torch.nn.CrossEntropyLoss()
         accuracy_criterion = torch.nn.CrossEntropyLoss()
