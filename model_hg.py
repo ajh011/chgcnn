@@ -125,6 +125,7 @@ class CrystalHypergraphConv(torch.nn.Module):
         self.bembed = nn.Linear(35, hedge_dim)
         self.tembed = nn.Linear(35, hedge_dim)
         self.membed = nn.Linear(35, hedge_dim)
+        self.cembed = torch.nn.Embedding(231,hedge_dim)
         self.bconvs = torch.nn.ModuleList() 
         self.tconvs = torch.nn.ModuleList() 
         self.mconvs = torch.nn.ModuleList() 
@@ -135,9 +136,13 @@ class CrystalHypergraphConv(torch.nn.Module):
             self.bconvs.append(bconv)
             self.mconvs.append(mconv)
             self.tconvs.append(tconv)
+        self.cconv = CHGConv(node_fea_dim = h_dim, out_dim = h_dim, hedge_fea_dim = hedge_dim)
         self.l1 = nn.Linear(h_dim, h_dim)
-        self.l2 = nn.Linear(h_dim,hout_dim)
+        self.l2 = nn.Linear(h_dim+hedge_dim,hout_dim)
+        self.l3 = nn.Linear(hout_dim,hout_dim)
+        self.scattact = torch.nn.Softplus()
         self.activation = torch.nn.Softplus()
+        self.activation2 = torch.nn.Softplus()
         if self.classification:
             self.out = nn.Linear(hout_dim, 2)
             self.sigmoid = torch.nn.Sigmoid()
@@ -150,9 +155,11 @@ class CrystalHypergraphConv(torch.nn.Module):
         batch = data.batch
         x = data.x
         motif_hyperedge_index = data.motif_hyperedge_index
+        cell_hyperedge_index = data.cell_hyperedge_index
         #triplet_hyperedge_index = data.triplet_hyperedge_index
         bond_hyperedge_index = data.bond_hyperedge_index
         motif_hyperedge_attr = self.membed(data.motif_hyperedge_attr)
+        cell_hyperedge_attr = self.cembed(data.cell_hyperedge_attr.long())
         #triplet_hyperedge_attr = self.tembed(data.triplet_hyperedge_attr)
         bond_hyperedge_attr = self.bembed(data.bond_hyperedge_attr)
         x = self.embed(x)
@@ -160,12 +167,16 @@ class CrystalHypergraphConv(torch.nn.Module):
             x, bond_hyperedge_attr = bconv(x, bond_hyperedge_index, bond_hyperedge_attr, num_nodes)
             #x, triplet_hyperedge_attr = tconv(x, triplet_hyperedge_index, triplet_hyperedge_attr, num_nodes)
             x, motif_hyperedge_attr = mconv(x, motif_hyperedge_index, motif_hyperedge_attr, num_nodes)
-            x = x.relu()
         x = scatter(x, batch, dim=0, reduce='mean')
+        x = self.l1(x)
+        x = self.scattact(x)
+        x = torch.cat([x,cell_hyperedge_attr],dim = -1)
         x = self.l2(x)
         if self.classification:
             x = self.dropout(x)
         x = self.activation(x)
+        x = self.l3(x)
+        x = self.activation2(x)
         output = self.out(x)
         if self.classification:
             output = self.sigmoid(output)

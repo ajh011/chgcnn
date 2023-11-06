@@ -283,6 +283,19 @@ def struc2cell(struc, hgraph, random_x = True):
     hgraph.append(['cell', 0, nodes, feat])
     return hgraph
 
+with open(f"/mnt/data/ajh/idsym_symbol_num_point_lattice.csv", mode="r", newline="") as id_syms:
+    id_sym_props = csv.reader(id_syms, delimiter=",")
+    sym_props = {id_sym[0]: [id_sym[1],id_sym[2],id_sym[3],id_sym[4]] for id_sym in id_sym_props}
+
+#Include unit cell hedge for pooling
+def cell_level_gen(struc, mp_id):
+    nodes = list(range(len(struc.sites)))
+    feat = float(sym_props[mp_id][1]) 
+    hgraph = [['cell', 0, nodes, feat]]
+    return hgraph
+
+
+
 ## Now bring together process into overall hgraph generation
 def hgraph_gen(struc, cell = False, nn_strategy = 'voro'):
     hgraph = []
@@ -338,14 +351,15 @@ def hgraph2hgraph(hgraph_package):
     
     
 ## Defining pyg hypergraph gen
-def gen_pyghypergraph(hgraph, hgraph_m, hgraph_t, node_attrs):
+def gen_pyghypergraph(hgraph, hgraph_m, hgraph_t, hgraph_c, node_attrs):
     graph = Data()
 
     num_nodes = torch.tensor(node_attrs).shape[0]
 
     he_index, he_attrs = hgraph2hgraph(hgraph)
-    he_index_m ,he_attrs_m = hgraph2hgraph(hgraph_m)
-    he_index_t ,he_attrs_t = hgraph2hgraph(hgraph_t)
+    he_index_m, he_attrs_m = hgraph2hgraph(hgraph_m)
+    he_index_t, he_attrs_t = hgraph2hgraph(hgraph_t)
+    he_index_c, he_attrs_c = hgraph2hgraph(hgraph_c)
     num_hedges = he_index[1][-1]
 
     graph.x = torch.tensor(node_attrs).float()
@@ -355,6 +369,8 @@ def gen_pyghypergraph(hgraph, hgraph_m, hgraph_t, node_attrs):
     graph.triplet_hyperedge_attr = torch.tensor(he_attrs_t).float()
     graph.motif_hyperedge_index = torch.tensor(he_index_m).long()
     graph.motif_hyperedge_attr = torch.tensor(he_attrs_m).float()
+    graph.cell_hyperedge_index = torch.tensor(he_index_c).long()
+    graph.cell_hyperedge_attr = torch.tensor(he_attrs_c).long()
     graph.num_nodes = torch.tensor(node_attrs).shape[0]
 
     return graph
@@ -388,8 +404,9 @@ class CrystalHypergraphDataset(Dataset):
         hgraph = hgraph_gen(struc, cell=False)
         mhgraph = mhgraph_gen(struc, cell=False)
         thgraph = thgraph_gen(struc, cell=False)
+        chgraph = cell_level_gen(struc, mp_id)
         node_attrs = struc2nodeattrs(struc, directory=self.cif_dir, import_feat=True)
-        hgraph = gen_pyghypergraph(hgraph, mhgraph, thgraph, node_attrs)
+        hgraph = gen_pyghypergraph(hgraph, mhgraph, thgraph, chgraph, node_attrs)
         hgraph.form_en = torch.tensor(float(form_en), dtype = torch.float)
         hgraph.band_gap = torch.tensor(float(band_gap), dtype = torch.float)
         hgraph.en_abv_hull = torch.tensor(float(en_abv_hull), dtype = torch.float)
