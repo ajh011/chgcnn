@@ -292,7 +292,8 @@ class Motifs(HyperedgeType):
         lsop_tol = 0.05
         for site, neighs in neighborhoods:
             ##Calculate order parameters for Voronoii neighborhood (excluding center)
-            feat = lsop.get_order_parameters(struc, site, indices_neighs = neighs)
+            #feat = lsop.get_order_parameters(struc, site, indices_neighs = neighs)
+            feat = lsop.get_order_parameters(struc, site)
             for n,f in enumerate(feat):
                 if f == None:
                     feat[n] = 0

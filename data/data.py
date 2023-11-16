@@ -17,7 +17,7 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import DataLoader
 from torch.utils.data import Dataset
 
-from data.hypergraph import Crystal_Hypergraph
+from hypergraph import Crystal_Hypergraph
 
 from multiprocessing import Pool
 from tqdm import tqdm
@@ -49,14 +49,14 @@ class CrystalHypergraphDataset(Dataset):
             self.sym_props = {id_sym[0]: [id_sym[1],id_sym[2],id_sym[3],id_sym[4]] for id_sym in id_sym_props}
 
     def __len__(self):
-        return len(self.id_prop_data)*self.dataset_ratio
+        return int(round(len(self.id_prop_data)*self.dataset_ratio,1))
     
     def __getitem__(self, index, report = True):
         mp_id, band_gap, form_en, en_hull, metalicity = self.id_prop_data[index]
         target_dict = {
-            'band_gap': torch.tensor(band_gap).float(),
-            'formation_energy': torch.tensor(form_en).float(),
-            'energy_abv_hull': torch.tensor(en_hull).float(),
+            'band_gap': torch.tensor(float(band_gap)).float(),
+            'formation_energy': torch.tensor(float(form_en)).float(),
+            'energy_abv_hull': torch.tensor(float(en_hull)).float(),
             'metalicity': torch.tensor(int(metalicity)).long(),
         }
 
@@ -67,7 +67,7 @@ class CrystalHypergraphDataset(Dataset):
             start = time.time()
         struc = CifParser(crystal_path).get_structures()[0]
         hgraph = Crystal_Hypergraph(struc, mp_id=mp_id, target_dict=target_dict)
-        hgraph.symmetry_number = torch.tensor(number).long()
+        hgraph.symmetry_number = torch.tensor(int(number)).long()
         if report:
             duration = time.time()-start
             print(f'Processed {mp_id} in {round(duration,5)} sec')
@@ -102,16 +102,17 @@ class InMemoryCrystalHypergraphDataset(Dataset):
 
         return data
     
+processed_data_dir = 'dataset'
 
 def process_data(idx):
-    with open(osp.join(processed_data_dir,'processed_ids.csv'),'a') as ids:
-        try:
-            d = dataset[idx]
-            torch.save(d['hgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
-            ids.write(d['mp_id']+'\n')
+    with open(osp.join('dataset','processed_ids.csv'),'a') as ids:
+        #try:
+        d = dataset[idx]
+        torch.save(d['hgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
+        ids.write(d['mp_id']+'\n')
 
-        except:
-            print(f'Cannot process index {idx}')
+#        except:
+ #           print(f'Cannot process index {idx}')
 
 
 def run_process(N=None, processes=10):
@@ -125,10 +126,10 @@ def run_process(N=None, processes=10):
 
 
 if __name__ == '__main__':
-    processed_data_dir = 'dataset'
     cif_dir = 'cifs'
+    processed_data_dir = processed_data_dir
 
     dataset = CrystalHypergraphDataset(cif_dir)
-    with osp.join(processed_data_dir,'processed_ids.csv') as ids:
-        print(f'Clearing id list in {osp.join(processed_data_dir,'processed_ids.csv')}')
+    with open(osp.join('dataset','processed_ids.csv'),'w') as ids:
+        print(f'Clearing id list in {osp.join(processed_data_dir,"processed_ids.csv")}')
     run_process()
