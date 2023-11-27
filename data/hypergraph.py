@@ -357,8 +357,6 @@ class Crystal_Hypergraph(HeteroData):
         super().__init__()
       
         self.struc = struc
-        self.hyperedge_index = {}
-        self.hyperedge_attrs = {}
         self.mp_id = mp_id
         self.orders = []
         
@@ -401,27 +399,25 @@ class Crystal_Hypergraph(HeteroData):
             with open('atom_init.json') as atom_init:
                 atom_vecs = json.load(atom_init)
                 node_attrs = [atom_vecs[f'{z}'] for z in node_attrs]
-        self.hyperedge_attrs['atom'] = torch.tensor(node_attrs).float()
+        self['atom'].hyperedge_attrs = torch.tensor(node_attrs).float()
 
     ## Function used to add hyperedge_type to hypergraph
     def add_hyperedge_type(self, hyperedge_type):
-        self.hyperedge_index[('atom','in',hyperedge_type.name)] = torch.tensor(hyperedge_type.hyperedge_index).long()
-        self.hyperedge_attrs[hyperedge_type.name] = torch.tensor(np.stack(hyperedge_type.hyperedge_attrs)).float()
+        self[('atom','in',hyperedge_type.name)].hyperedge_index = torch.tensor(hyperedge_type.hyperedge_index).long()
+        self[hyperedge_type.name].hyperedge_attrs = torch.tensor(np.stack(hyperedge_type.hyperedge_attrs)).float()
         self.orders.append(hyperedge_type.name)
 
     ## Function used to determine relatives edges between different order hyperedges
-    def hyperedge_inclusion(self, larger_hedgetype, smaller_hedgetype):
+    def hyperedge_inclusion(self, larger_hedgetype, smaller_hedgetype, flip = False):
         hedge_index = [[],[]]
-        if larger_hedgetype.order < smaller_hedgetype.order:
-            pass
-        else:
-            for small_idx, small_set in enumerate(smaller_hedgetype.neighborsets):
-                for large_idx, large_set in enumerate(larger_hedgetype.neighborsets):
-                    if contains(large_set, small_set):
-                        hedge_index[0].append(small_idx)
-                        hedge_index[1].append(large_idx)
-            self.hyperedge_index[(smaller_hedgetype.name, 'in', larger_hedgetype.name)] = torch.tensor(hedge_index).long()
-            self.hyperedge_index[(larger_hedgetype.name, 'contains', smaller_hedgetype.name)] = torch.tensor([hedge_index[1],hedge_index[0]]).long()
+        for small_idx, small_set in enumerate(smaller_hedgetype.neighborsets):
+            for large_idx, large_set in enumerate(larger_hedgetype.neighborsets):
+                if contains(large_set, small_set):
+                    hedge_index[0].append(small_idx)
+                    hedge_index[1].append(large_idx)
+        self[(smaller_hedgetype.name, 'in', larger_hedgetype.name)].hyperedge_index = torch.tensor(hedge_index).long()
+        if flip == True:
+            self[(larger_hedgetype.name, 'contains', smaller_hedgetype.name)].hyperedge_index = torch.tensor([hedge_index[1],hedge_index[0]]).long()
 
     ## Function used to determine relatives edges between touching hyperedges of same order
     def hyperedge_touching(self, hyperedge_type):
@@ -434,13 +430,49 @@ class Crystal_Hypergraph(HeteroData):
                     if touches(set_1, set_2):
                         hedge_index[0].append(idx_1)
                         hedge_index[1].append(idx_2)
-        self.hyperedge_index[(hyperedge_type.name, 'touches', hyperedge_type.name)] = torch.tensor(hedge_index).long()
+        self[(hyperedge_type.name, 'touches', hyperedge_type.name)].hyperedge_index = torch.tensor(hedge_index).long()
       
+    ## Function used to determine labelled inter-order hyperedge relations
+    def hyperedge_relations(self, larger_hedgetype, smaller_hedgetype, flip = False):
+        relation_index = [[],[],[]]
+        for (idx_1, nset_1), (idx_2, nset_2) in itertools.combinations(enumerate(smaller_hedgetype.neighborsets),2):
+            for large_idx, large_nset in enumerate(larger_hedgetype.neighborsets):
+                if contains(large_nset, nset_1) and contains(large_nset, nset_2):
+                    relation_index[0].append(idx_1)
+                    relation_index[1].append(large_idx)
+                    relation_index[2].append(idx_2)
+                    if flip == True:
+                        relation_index[0].append(idx_2)
+                        relation_index[1].append(large_idx)
+                        relation_index[2].append(idx_1)
+        self[(smaller_hedgetype.name, larger_hedgetype.name, smaller_hedgetype.name)].inter_relations_index = torch.tensor(relation_index).long()
+
+
+    ## Stop-gap for atom-wise relations, at the moment
+    def atom_hyperedge_relations(self, larger_hedgetype, flip = False):
+        relation_index = [[],[],[]]
+        for idx, nset in enumerate(larger_hedgetype.neighborsets):
+            for atom_pair in itertools.combinations(nset, 2):
+                relation_index[0].append(atom_pair[0])
+                relation_index[1].append(idx)
+                relation_index[2].append(atom_pair[1])
+                if flip == True:
+                    relation_index[0].append(atom_pair[0])
+                    relation_index[1].append(idx)
+                    relation_index[2].append(atom_pair[1])
+        self[('atom', larger_hedgetype.name, 'atom')].hyperedge_relations_index = torch.tensor(relation_index).long()
+
+
+
+
     ## Function used to generate full relatives set
     def generate_relatives(self, touching = True, inclusion = True):
         if inclusion:
             for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
-                self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
+                    if pair_hedge_types[0].order > pair_hedge_types[1].order:
+                        self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
+                        self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
+
                 
         if touching:
             for hyperedge_type in self.hyperedges:
