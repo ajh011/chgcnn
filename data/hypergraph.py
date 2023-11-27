@@ -472,6 +472,8 @@ class Crystal_Hypergraph(HeteroData):
                     if pair_hedge_types[0].order > pair_hedge_types[1].order:
                         self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
                         self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
+            for hedge_type in  self.hyperedges:
+                self.atom_hyperedge_relations(hedge_type)
 
                 
         if touching:
