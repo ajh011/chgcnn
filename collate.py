@@ -122,10 +122,59 @@ def _collate(
 ) -> Tuple[Any, Any, Any]:
 
     elem = values[0]
-    num_nodes_list = [data.num_nodes for data in data_list]
+
+    if "relations" in key:
+        relations_incs = []
+        for hedge_indexes in values:
+            max_num_set_0 = torch.max(hedge_indexes[0])+1 if hedge_indexes.numel() != 0 else 0
+            max_num_set_1 = torch.max(hedge_indexes[1])+1 if hedge_indexes.numel() != 0 else 0
+            max_num_set_2 = torch.max(hedge_indexes[2])+1 if hedge_indexes.numel() != 0 else 0
+            relations_incs.append(torch.tensor([max_num_set_0,max_num_set_1,max_num_set_2])) 
+        relations_incs.insert(0,torch.tensor([0,0,0]))
+        relations_incs = [sum(relations_incs[:idx+1]) if idx > 0 else  relations_incs[0]  for idx in range(len(relations_incs))]
+        relations_index_batch = [torch.stack([value[0] + inc[0],value[1]+inc[1],value[2]+inc[2]],dim = 0) for value, inc in zip(values, relations_incs)] 
+        
+        # Concatenate a list of `torch.Tensor` along the `cat_dim`.
+
+        # NOTE: We need to take care of incrementing elements appropriately.
+        key = str(key)
+        cat_dim = data_list[0].__cat_dim__(key, elem, stores[0])
+        if cat_dim is None or elem.dim() == 0:
+            values = [value.unsqueeze(0) for value in values]
+        slices = cumsum([value.size(cat_dim or 0) for value in values])
+        #if increment:
+         #   incs = get_incs(key, values, data_list, stores)
+          #  if incs.dim() > 1 or int(incs[-1]) != 0:
+           #     values = [
+            #        value + inc.to(value.device)
+             #       for value, inc in zip(values, incs)
+              #  ]
+        #else:
+        incs = None
+
+        if torch.utils.data.get_worker_info() is not None:
+            # Write directly into shared memory to avoid an extra copy:
+            numel = sum(value.numel() for value in values)
+            if torch_geometric.typing.WITH_PT2:
+                storage = elem.untyped_storage()._new_shared(
+                    numel * elem.element_size(), device=elem.device)
+            else:
+                storage = elem.storage()._new_shared(numel, device=elem.device)
+            shape = list(elem.size())
+            if cat_dim is None or elem.dim() == 0:
+                shape = [len(values)] + shape
+            else:
+                shape[cat_dim] = int(slices[-1])
+            out = elem.new(storage).resize_(*shape)
+        else:
+            out = None
+
+        value = torch.cat(relations_index_batch, dim=1, out=out)
+        return value, slices, incs
 
 
     if "hyperedge_index" in key:
+        num_nodes_list = [torch.max(value[0]) if value.numel() != 0 else 0 for value in values]
         hedge_incs = []
         for num_nodes, hedge_indexes in zip(num_nodes_list, values):
             num_hedges = torch.max(hedge_indexes[1])+1 if hedge_indexes.numel() != 0 else 0
@@ -142,15 +191,7 @@ def _collate(
         if cat_dim is None or elem.dim() == 0:
             values = [value.unsqueeze(0) for value in values]
         slices = cumsum([value.size(cat_dim or 0) for value in values])
-        if increment:
-            incs = get_incs(key, values, data_list, stores)
-            if incs.dim() > 1 or int(incs[-1]) != 0:
-                values = [
-                    value + inc.to(value.device)
-                    for value, inc in zip(values, incs)
-                ]
-        else:
-            incs = None
+        incs = None
 
         if torch.utils.data.get_worker_info() is not None:
             # Write directly into shared memory to avoid an extra copy:
