@@ -86,7 +86,7 @@ class InMemoryCrystalHypergraphDataset(Dataset):
         self.csv_dir = csv_dir
         self.data_dir = data_dir
 
-        with open(osp.join(csv_dir, 'ids.csv')) as id_file:
+        with open(osp.join(csv_dir, 'processed_ids.csv')) as id_file:
             ids_csv = csv.reader(id_file)
             ids = [mp_id[0] for mp_id in ids_csv]
             self.ids = ids
@@ -106,13 +106,13 @@ processed_data_dir = 'dataset'
 
 def process_data(idx):
     with open(osp.join('dataset','processed_ids.csv'),'a') as ids:
-        #try:
-        d = dataset[idx]
-        torch.save(d['hgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
-        ids.write(d['mp_id']+'\n')
+        try:
+            d = dataset[idx]
+            torch.save(d['hgraph'], 'dataset/{}_hg.pt'.format(d['mp_id']))
+            ids.write(d['mp_id']+'\n')
 
-#        except:
- #           print(f'Cannot process index {idx}')
+        except:
+            print(f'Cannot process index {idx}')
 
 
 def run_process(N=None, processes=10):

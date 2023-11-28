@@ -359,33 +359,35 @@ class Crystal_Hypergraph(HeteroData):
         self.struc = struc
         self.mp_id = mp_id
         self.orders = []
+       
+        if struc != None:
+            ## Generate neighbor lists
+            nbr_mind, _ = get_nbrlist(struc, nn_strategy = 'mind', max_nn=12)
+            nbr_voro, _ = get_nbrlist(struc, nn_strategy = 'voro', max_nn=12)
         
-        ## Generate neighbor lists
-        nbr_mind, _ = get_nbrlist(struc, nn_strategy = 'mind', max_nn=12)
-        nbr_voro, _ = get_nbrlist(struc, nn_strategy = 'voro', max_nn=12)
+            ## Generate bonds, triplets, motifs, and unit cell
+            ## hyperedge types
+            bonds = Bonds(nbr_voro)
+            triplets = Triplets(nbr_mind)        
+            #motifs = Motifs(nbr_mind, struc=struc)        
+            #unit_cell = UnitCell(struc)
         
-        ## Generate bonds, triplets, motifs, and unit cell
-        ## hyperedge types
-        bonds = Bonds(nbr_voro)
-        triplets = Triplets(nbr_mind)        
-        motifs = Motifs(nbr_mind, struc=struc)        
-        unit_cell = UnitCell(struc)
-        
-        ## Form hyperedge_type list
-        self.hyperedges = [bonds, triplets, motifs, unit_cell]
+            ## Form hyperedge_type list
+            #self.hyperedges = [bonds, triplets, motifs, unit_cell]
+            self.hyperedges = [bonds, triplets]
 
-        ## Add hyperedge types to hypergraph
-        if self.hyperedges != None:
-            for hyperedge_type in self.hyperedges:
-                self.add_hyperedge_type(hyperedge_type)
+            ## Add hyperedge types to hypergraph
+            if self.hyperedges != None:
+                for hyperedge_type in self.hyperedges:
+                    self.add_hyperedge_type(hyperedge_type)
         
-        ## Generate relatives edges and atomic info
-        self.generate_atom_xs()
-        self.generate_relatives()
+            ## Generate relatives edges and atomic info
+            self.generate_atom_xs()
+            self.generate_relatives()
         
-        ## Import target dict automatically, if passed as input of init
-        if target_dict != {}:
-            self.import_targets(target_dict)
+            ## Import target dict automatically, if passed as input of init
+            if target_dict != {}:
+                self.import_targets(target_dict)
 
     ## Function used to generate atomic features (Note these are considered hyperedge_attrs)
     def generate_atom_xs(self, import_feats=True):
@@ -468,20 +470,20 @@ class Crystal_Hypergraph(HeteroData):
     ## Function used to generate full relatives set
     def generate_relatives(self, touching = True, inclusion = True):
         if inclusion:
-            for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
-                    if pair_hedge_types[0].order > pair_hedge_types[1].order:
-                        self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
-                        self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
+            #for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
+             #       if pair_hedge_types[0].order > pair_hedge_types[1].order:
+              #          self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
+               #         self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
             for hedge_type in  self.hyperedges:
                 self.atom_hyperedge_relations(hedge_type)
 
                 
-        if touching:
-            for hyperedge_type in self.hyperedges:
-                if hyperedge_type.name == 'unit_cell':
-                    pass
-                else:
-                    self.hyperedge_touching(hyperedge_type)
+        #if touching:
+         #   for hyperedge_type in self.hyperedges:
+          #      if hyperedge_type.name == 'unit_cell':
+           #         pass
+            #    else:
+             #       self.hyperedge_touching(hyperedge_type)
         
 
     ## Import targets as dictionary and save as value of heterodata
