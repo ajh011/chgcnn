@@ -98,7 +98,9 @@ class InMemoryCrystalHypergraphDataset(Dataset):
         mp_id = self.ids[index]
         file_dir = osp.join(self.data_dir, mp_id + '_hg.pt')
         data = torch.load(file_dir)
- 
+        num_nodes = list(data['atom'].hyperedge_attrs.shape)[0]
+        data['atom'].num_nodes = torch.tensor(num_nodes).long()
+        data['atom'].batch = torch.tensor([0 for i in range(num_nodes)])
 
         return data
     

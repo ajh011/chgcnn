@@ -204,15 +204,14 @@ class CrystalHypergraphConv(torch.nn.Module):
  
     def forward(self, data):
         num_nodes = data.num_nodes
-        #batch = data.batch
+        batch = data['atom'].batch
         x = data['atom'].hyperedge_attrs
         inter_relations_index = data[('atom','bond','atom')].hyperedge_relations_index
         connect_feats = data['bond'].hyperedge_attrs
         x = self.embed(x)
         for conv in self.convs:
             x = conv(x, inter_relations_index, connect_feats, num_nodes)
-        x = torch.mean(x,dim=0)
-        #x = scatter(x, batch, dim=0, reduce='mean')
+        x = scatter(x, batch, dim=0, reduce='mean')
         x = self.scattact(x)
         x = self.l1(x)
         if self.classification:
