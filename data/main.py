@@ -84,10 +84,10 @@ def train(model, device, train_loader, loss_criterion, accuracy_criterion, optim
 
         data_time.update(time.time() - end)
         data = data.to(device, non_blocking=True)
-        output = model(data)
+        output = torch.squeeze(model(data))
         if task == 'regression':
-            target_norm = normalizer.norm(data[target_name]).view((-1,1))
-            target = data[target_name].view((-1,1))
+            target_norm = torch.squeeze(normalizer.norm(data[target_name]).view((-1,1)))
+            target = torch.squeeze(data[target_name].view((-1,1)))
             loss = loss_criterion(output, target_norm)
             accu = accuracy_criterion(normalizer.denorm(output), target)
             losses.update(loss.item(), target_norm.size(0))

@@ -25,6 +25,8 @@ class CHGInterConv(MessagePassing):
         self.hedge_fea_dim = hedge_fea_dim
 
         self.lin_full_presplit = Linear(2*node_fea_dim+hedge_fea_dim, 2*node_fea_dim)
+        self.lin_filter = Linear(2*node_fea_dim+hedge_fea_dim, node_fea_dim)
+        self.lin_core = Linear(2*node_fea_dim+hedge_fea_dim, node_fea_dim)
 
         self.softplus_hedge = torch.nn.Softplus()
         self.sigmoid_filter = torch.nn.Sigmoid()
@@ -64,12 +66,13 @@ class CHGInterConv(MessagePassing):
         remote_xs = x[inter_relations_index[0]]
 
         z = torch.cat([origin_xs, connect_xs, remote_xs], dim = 1)
+        
 
         z = self.lin_full_presplit(z)
         if self.batch_norm == True:
             z = self.bn_1(z)
         z_f, z_c = z.chunk(2, dim = -1)
-        out = self.sigmoid_filter(z_f)*self.softplus_core(z_c) # Apply CGConv like structure
+        out = self.sigmoid_filter(z_f)*self.softplus_core(z_c)# Apply CGConv like structure
         out = self.node_aggr(out, inter_relations_index[0], dim_size = num_nodes) #aggregate according to node
  
         if self.batch_norm == True:
@@ -179,22 +182,19 @@ class CHGConv(MessagePassing):
 
 
 class CrystalHypergraphConv(torch.nn.Module):
-    def __init__(self, classification, h_dim = 64, hedge_dim=40, hout_dim = 128, n_layers = 3):
+    def __init__(self, classification, h_dim = 128, hedge_dim=40, hout_dim = 256, hidden_hedge_dim = 128, n_layers = 1):
         super().__init__()
 
         self.classification = classification
 
         self.embed = nn.Linear(92, h_dim)
-        self.bembed = nn.Linear(35, hedge_dim)
+        self.bembed = nn.Linear(hedge_dim, hidden_hedge_dim)
         self.convs = torch.nn.ModuleList() 
         for i in range(n_layers):
-            conv = CHGInterConv(node_fea_dim = h_dim, hedge_fea_dim = hedge_dim)
+            conv = CHGInterConv(node_fea_dim = h_dim, hedge_fea_dim = hidden_hedge_dim)
             self.convs.append(conv)
-        self.l1 = nn.Linear(h_dim, h_dim)
-        self.l3 = nn.Linear(h_dim,hout_dim)
-        self.scattact = torch.nn.Softplus()
+        self.l1 = nn.Linear(h_dim, hout_dim)
         self.activation = torch.nn.Softplus()
-        self.activation2 = torch.nn.Softplus()
         if self.classification:
             self.out = nn.Linear(hout_dim, 2)
             self.sigmoid = torch.nn.Sigmoid()
@@ -207,18 +207,16 @@ class CrystalHypergraphConv(torch.nn.Module):
         batch = data['atom'].batch
         x = data['atom'].hyperedge_attrs
         inter_relations_index = data[('atom','bond','atom')].hyperedge_relations_index
-        connect_feats = data['bond'].hyperedge_attrs
+        connect_feats = self.bembed(data['bond'].hyperedge_attrs)
         x = self.embed(x)
         for conv in self.convs:
             x = conv(x, inter_relations_index, connect_feats, num_nodes)
+        
         x = scatter(x, batch, dim=0, reduce='mean')
-        x = self.scattact(x)
         x = self.l1(x)
         if self.classification:
             x = self.dropout(x)
         x = self.activation(x)
-        x = self.l3(x)
-        x = self.activation2(x)
         output = self.out(x)
         if self.classification:
             output = self.sigmoid(output)
