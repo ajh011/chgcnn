@@ -34,7 +34,7 @@ class CHGInterConv(MessagePassing):
         self.softplus_out = torch.nn.Softplus()
 
 
-        self.node_aggr = aggr.SoftmaxAggregation(learn = True)
+        self.node_aggr = aggr.MeanAggregation()
 
         if batch_norm == True:
             self.bn_1 = BatchNorm1d(2*node_fea_dim)
@@ -73,7 +73,7 @@ class CHGInterConv(MessagePassing):
             z = self.bn_1(z)
         z_f, z_c = z.chunk(2, dim = -1)
         out = self.sigmoid_filter(z_f)*self.softplus_core(z_c)# Apply CGConv like structure
-        out = self.node_aggr(out, inter_relations_index[0], dim_size = num_nodes) #aggregate according to node
+        out = self.node_aggr(out, inter_relations_index[0], dim_size = num_nodes, dim = 0) #aggregate according to node
  
         if self.batch_norm == True:
             out = self.bn_2(out)
@@ -189,9 +189,13 @@ class CrystalHypergraphConv(torch.nn.Module):
 
         self.embed = nn.Linear(92, h_dim)
         self.bembed = nn.Linear(hedge_dim, hidden_hedge_dim)
+        self.convs_btb = torch.nn.ModuleList() 
         self.convs = torch.nn.ModuleList() 
         for i in range(n_layers):
-            conv = CHGInterConv(node_fea_dim = h_dim, hedge_fea_dim = hidden_hedge_dim)
+            conv = CHGInterConv(node_fea_dim = hedge_dim, hedge_fea_dim = hedge_dim)
+            self.convs_btb.append(conv)
+        for i in range(n_layers):
+            conv = CHGInterConv(node_fea_dim = h_dim, hedge_fea_dim = hedge_dim)
             self.convs.append(conv)
         self.l1 = nn.Linear(h_dim, hout_dim)
         self.activation = torch.nn.Softplus()
@@ -204,13 +208,18 @@ class CrystalHypergraphConv(torch.nn.Module):
  
     def forward(self, data):
         num_nodes = data.num_nodes
+        num_bonds = data['bond'].hyperedge_attrs.shape[0]
         batch = data['atom'].batch
         x = data['atom'].hyperedge_attrs
-        inter_relations_index = data[('atom','bond','atom')].hyperedge_relations_index
-        connect_feats = self.bembed(data['bond'].hyperedge_attrs)
+        inter_relations_index_aba = data[('atom','bond','atom')].hyperedge_relations_index
+        inter_relations_index_btb = data[('bond','triplet','bond')].inter_relations_index
+        bond_feats = data['bond'].hyperedge_attrs
+        triplet_feats = data['triplet'].hyperedge_attrs
         x = self.embed(x)
+        for conv in self.convs_btb:
+            bond_feats = conv(bond_feats, inter_relations_index_btb, triplet_feats, num_bonds)
         for conv in self.convs:
-            x = conv(x, inter_relations_index, connect_feats, num_nodes)
+            x = conv(x, inter_relations_index_aba, bond_feats, num_nodes)
         
         x = scatter(x, batch, dim=0, reduce='mean')
         x = self.l1(x)

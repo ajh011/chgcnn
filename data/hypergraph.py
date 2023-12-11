@@ -470,10 +470,10 @@ class Crystal_Hypergraph(HeteroData):
     ## Function used to generate full relatives set
     def generate_relatives(self, touching = True, inclusion = True):
         if inclusion:
-            #for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
-             #       if pair_hedge_types[0].order > pair_hedge_types[1].order:
+            for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
+                    if pair_hedge_types[0].order > pair_hedge_types[1].order:
               #          self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
-               #         self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
+                        self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
             for hedge_type in  self.hyperedges:
                 self.atom_hyperedge_relations(hedge_type)
 
