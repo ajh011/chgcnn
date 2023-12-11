@@ -64,7 +64,7 @@ def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
         neigh = [neighbor for neighbor in nn.get_nn(struc, n)]
 
         neighbor_reformat=[]
-        for neighbor in neigh[:max_nn-1]:
+        for neighbor in neigh[:max_nn]:
             neighbor_index = neighbor.index
             offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
             m = struc.lattice.matrix
@@ -368,7 +368,7 @@ class Crystal_Hypergraph(HeteroData):
             ## Generate bonds, triplets, motifs, and unit cell
             ## hyperedge types
             bonds = Bonds(nbr_voro)
-            triplets = Triplets(nbr_mind)        
+            triplets = Triplets(nbr_voro)        
             #motifs = Motifs(nbr_mind, struc=struc)        
             #unit_cell = UnitCell(struc)
         
