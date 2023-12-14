@@ -353,12 +353,15 @@ def touches(one, two):
 
 ### Define general crystal hypergraph class that accepts list of hyperedge types, mp_id string, and structure
 class Crystal_Hypergraph(HeteroData):
-    def __init__(self, struc,  mp_id: str = None, target_dict = {}):
-        super().__init__()
-      
+    def __init__(self, struc, bonds = True, triplets = True, motifs = True, unit_cell = False,
+                 mp_id: str = None, target_dict = {}, strategy = 'Aggregate'):
+        super().__init__()  
+        
         self.struc = struc
         self.mp_id = mp_id
         self.orders = []
+        
+        self.hyperedges = []
        
         if struc != None:
             ## Generate neighbor lists
@@ -367,14 +370,20 @@ class Crystal_Hypergraph(HeteroData):
         
             ## Generate bonds, triplets, motifs, and unit cell
             ## hyperedge types
-            bonds = Bonds(nbr_voro)
-            triplets = Triplets(nbr_voro)        
-            #motifs = Motifs(nbr_mind, struc=struc)        
-            #unit_cell = UnitCell(struc)
-        
-            ## Form hyperedge_type list
-            #self.hyperedges = [bonds, triplets, motifs, unit_cell]
-            self.hyperedges = [bonds, triplets]
+            if bonds == True:
+                bonds = Bonds(nbr_voro)
+                self.hyperedges.append(bonds)
+            if triplets == True:
+                triplets = Triplets(nbr_voro)
+                self.hyperedges.append(triplets)
+            if motifs == True:
+                motifs = Motifs(nbr_mind, struc=struc)    
+                self.hyperedges.append(motifs)
+            if unit_cell == True:
+                unit_cell = UnitCell(struc)
+                self.hyperedges.append(unit_cell)
+
+
 
             ## Add hyperedge types to hypergraph
             if self.hyperedges != None:
@@ -383,14 +392,14 @@ class Crystal_Hypergraph(HeteroData):
         
             ## Generate relatives edges and atomic info
             self.generate_atom_xs()
-            self.generate_relatives()
+            self.generate_edges(strategy)
         
             ## Import target dict automatically, if passed as input of init
             if target_dict != {}:
                 self.import_targets(target_dict)
 
     ## Function used to generate atomic features (Note these are considered hyperedge_attrs)
-    def generate_atom_xs(self, import_feats=True):
+    def generate_atom_xs(self, import_feats=False):
         node_attrs = []
         for site in self.struc.sites:
             for el in site.species:
@@ -464,26 +473,48 @@ class Crystal_Hypergraph(HeteroData):
                     relation_index[2].append(atom_pair[1])
         self[('atom', larger_hedgetype.name, 'atom')].hyperedge_relations_index = torch.tensor(relation_index).long()
 
+    ## Function used to genertate different edge strategies (Relatives, Aggregate, Interorder, All)
+    def generate_edges(self, strategy):
+        if strategy == 'All':
+            self.generate_relatives()
+        elif strategy == 'Relatives':
+            self.generate_relatives(relatives = False)
+        elif strategy == 'Aggregate': 
+            self.generate_relatives(touching = False, relatives = False)
+        elif strategy == 'Interorder': 
+            self.generate_relatives(inclusion = False, touching = False)
 
-
-
+        
     ## Function used to generate full relatives set
-    def generate_relatives(self, touching = True, inclusion = True):
-        if inclusion:
+    def generate_relatives(self, relatives = True, touching = True, inclusion = True, flip = True):
+        if relatives & inclusion == True:
             for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
                     if pair_hedge_types[0].order > pair_hedge_types[1].order:
-              #          self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1])
+                        self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1], flip = flip)
+                        self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
+            for hedge_type in  self.hyperedges:
+                self.atom_hyperedge_relations(hedge_type)
+
+        
+        elif inclusion:
+            for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
+                    if pair_hedge_types[0].order > pair_hedge_types[1].order:
+                        self.hyperedge_inclusion(pair_hedge_types[0],pair_hedge_types[1], flip = flip)
+                        
+        elif relatives:
+            for pair_hedge_types in itertools.permutations(self.hyperedges, 2):
+                    if pair_hedge_types[0].order > pair_hedge_types[1].order:
                         self.hyperedge_relations(pair_hedge_types[0],pair_hedge_types[1])
             for hedge_type in  self.hyperedges:
                 self.atom_hyperedge_relations(hedge_type)
 
                 
-        #if touching:
-         #   for hyperedge_type in self.hyperedges:
-          #      if hyperedge_type.name == 'unit_cell':
-           #         pass
-            #    else:
-             #       self.hyperedge_touching(hyperedge_type)
+        if touching:
+            for hyperedge_type in self.hyperedges:
+                if hyperedge_type.name == 'unit_cell':
+                    pass
+                else:
+                    self.hyperedge_touching(hyperedge_type)
         
 
     ## Import targets as dictionary and save as value of heterodata
