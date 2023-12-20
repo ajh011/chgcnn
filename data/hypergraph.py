@@ -64,7 +64,7 @@ def get_nbrlist(struc, nn_strategy = 'mind', max_nn=12):
         neigh = [neighbor for neighbor in nn.get_nn(struc, n)]
 
         neighbor_reformat=[]
-        for neighbor in neigh[:max_nn]:
+        for neighbor in sorted(neigh, key = lambda x:x[1])[:max_nn]:
             neighbor_index = neighbor.index
             offset = struc.frac_coords[neighbor_index] - struc.frac_coords[n] + neighbor.image
             m = struc.lattice.matrix
